@@ -23,5 +23,5 @@ Arquivo único: [`pc/LeveEditor-PC.html`](pc/LeveEditor-PC.html) — baixe na ab
 - 🎬 **Montagem**: faixa de cenas (arraste para reordenar) + faixa de textos (arraste/estique), textos na prévia (mover, girar, tamanho).
 - **Textos** iguais ao app: estilos prontos, fonte, cor, contorno, brilho, fundo, sombra, animações de entrada/saída/loop.
 - **Atalhos**: Espaço, ←/→ (quadro), Shift+←/→ (1s), I, O, S, T, Del, Ctrl+Z/Y.
-- **Exportar**: grava com textos no navegador (WebM/MP4, leva o tempo do vídeo) **ou** baixa um script `.bat` do ffmpeg (rápido, sem textos).
+- **Exportar**: um clique → baixa o **MP4** pronto, com textos. No Chrome é mais rápido que o tempo real (decodifica/codifica pelo próprio navegador e copia o áudio original, sem dessincronizar). Em navegador sem suporte, grava em tempo real automaticamente.
 - **Projeto**: salva sozinho no navegador e em `.leve.json` (mesmo formato do app Android).

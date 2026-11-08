@@ -168,11 +168,9 @@ table.keys td{padding:3px 8px 3px 0}
   <h3>Exportar</h3>
   <div id="expInfo" class="muted"></div>
   <div class="opts" id="expOpts">
-    <button data-z="720" class="accent">⚡ Rápido COM textos (ffmpeg) — 720p — recomendado<small>Baixa um .zip (script .bat + imagens dos textos). Extraia junto do filme e do ffmpeg.exe e dê dois cliques. Corte exato, bem mais rápido que gravar.</small></button>
-    <button data-z="1080">⚡ Rápido COM textos (ffmpeg) — 1080p<small>Igual ao de cima, em Full HD.</small></button>
-    <button data-s="copy">⚡⚡ Cópia sem recompressão (ffmpeg, sem textos)<small>Segundos. Cada cena começa no quadro-chave mais próximo (~1s antes).</small></button>
-    <button data-h="720">● Gravar no navegador — 720p com textos<small>Não precisa de nada instalado, mas leva o tempo do vídeo. Pode deixar em segundo plano.</small></button>
-    <button data-h="480">● Gravar no navegador — 480p com textos<small>Mais leve para PC fraco.</small></button>
+    <button data-h="720" class="accent">720p — recomendado</button>
+    <button data-h="1080">1080p — melhor qualidade</button>
+    <button data-h="480">480p — mais leve</button>
   </div>
   <div id="expRun" style="display:none">
     <div id="expLbl">Preparando…</div>
@@ -296,7 +294,7 @@ function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); resto
 
 // ---------------------------------------------------------------- vídeo
 const vid = $('vid');
-let videoURL = null, videoReady = false, currentFile = '';
+let videoURL = null, videoReady = false, currentFile = '', currentFileObj = null;
 const thumbVid = document.createElement('video');
 thumbVid.muted = true; thumbVid.preload = 'auto';
 
@@ -310,7 +308,7 @@ function openVideoFile(file) {
   }
   if (videoURL) URL.revokeObjectURL(videoURL);
   videoURL = URL.createObjectURL(file);
-  currentFile = file.name;
+  currentFile = file.name; currentFileObj = file;
   videoReady = false;
   thumbReset();
   P.fileName = file.name; P.uri = file.name;
@@ -1315,9 +1313,7 @@ function openExport() {
 }
 $('expOpts').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.h) recordExport(+b.dataset.h);
-  else if (b.dataset.z) { ffmpegZip(+b.dataset.z); }
-  else if (b.dataset.s) { downloadScript(b.dataset.s); $('dlgExport').close(); }
+  if (b.dataset.h) exportVideo(+b.dataset.h);
 });
 $('expClose').onclick = () => { if (exporting) { expCancel = true; } else $('dlgExport').close(); };
 let audioCtx = null, srcNode = null, speakerGain = null;
@@ -1435,123 +1431,326 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 120000);
 }
 
-// ---------------------------------------------------------------- ZIP simples (sem compressão) para o pacote do ffmpeg
-const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
-function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
-function makeZip(files) { // files: [{name, data: Uint8Array}]
-  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
-  for (const f of files) {
-    const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
-    const h = new DataView(new ArrayBuffer(30));
-    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
-    h.setUint16(10, 0, true); h.setUint16(12, 0x21, true); h.setUint32(14, crc, true); h.setUint32(18, sz, true); h.setUint32(22, sz, true);
-    h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
-    parts.push(new Uint8Array(h.buffer), nm, f.data);
-    const c = new DataView(new ArrayBuffer(46));
-    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
-    c.setUint16(12, 0, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true); c.setUint32(20, sz, true); c.setUint32(24, sz, true);
-    c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
-    central.push(new Uint8Array(c.buffer), nm);
-    off += 30 + nm.length + sz;
-  }
-  const cdSize = central.reduce((a, b) => a + b.length, 0);
-  const e = new DataView(new ArrayBuffer(22));
-  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
-  e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
-  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
-}
-const canvasPng = c => new Promise(r => c.toBlob(b => b.arrayBuffer().then(a => r(new Uint8Array(a))), 'image/png'));
-const batSafe = s => String(s).replace(/[&|<>^%!"]/g, '');
-
+// ---------------------------------------------------------------- EXPORTAR (um clique)
 /**
- * Exportação rápida COM textos pelo ffmpeg: cada texto vira um PNG transparente do tamanho do vídeo
- * e o .bat sobrepõe no tempo certo (com fade de entrada/saída). Corte exato, x264 veryfast.
+ * Exporta direto para MP4 no navegador.
+ * Caminho rápido (Chrome 94+): lê o MP4, decodifica (WebCodecs), desenha os textos, codifica H.264
+ * e copia o áudio original — mais rápido que tempo real e sem dessincronizar.
+ * Se o navegador não tiver isso (ex.: Firefox antigo) ou o vídeo não for MP4/H.264, grava em tempo real.
  */
-async function ffmpegZip(h) {
-  const outH = Math.min(h, P.h) & ~1, outW = Math.round(P.w * outH / P.h) & ~1;
+async function exportVideo(h) {
   $('expOpts').style.display = 'none'; $('expRun').style.display = '';
-  $('expLbl').textContent = 'Preparando as imagens dos textos…'; $('expBar').style.width = '10%';
-  const film = P.fileName || 'filme.mp4';
-  const st = clipStarts();
-  const files = [];
-  const L = ['@echo off', 'chcp 65001 >nul', 'cd /d "%~dp0"', `set "FILME=${batSafe(film)}"`, '',
-    'echo ================================================', `echo  Leve Editor - ${batSafe(P.name)} (${outH}p com textos)`,
-    'echo  Deixe esta pasta, o ffmpeg.exe e o filme JUNTOS.', 'echo ================================================',
-    'where ffmpeg >nul 2>nul || if not exist ffmpeg.exe ( echo Falta o ffmpeg.exe nesta pasta. Baixe em https://www.gyan.dev/ffmpeg/builds/ & pause & exit /b )',
-    'if not exist "%FILME%" ( echo Nao achei o filme "%FILME%" nesta pasta. & pause & exit /b )',
-    'if exist lista_leve.txt del lista_leve.txt', ''];
-  const base = `scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
-  for (let i = 0; i < P.seq.length; i++) {
-    const sc = scene(P.seq[i].scene); if (!sc) continue;
-    const cs = st[i], ce = st[i + 1], D = (ce - cs) / 1000;
-    const part = `parte_${pad(i + 1, 3)}.mp4`;
-    const inputs = [], filt = [`[0:v]${base}[b0]`];
-    let last = 'b0', k = 0;
-    for (const t of P.texts) {
-      if (!t.text.trim() || t.start >= ce || t.start + t.dur <= cs) continue;
-      k++;
-      const c = document.createElement('canvas'); c.width = outW; c.height = outH;
-      const g = c.getContext('2d');
-      const bm = renderText(t, outH);
-      g.translate(t.x * outW, t.y * outH); g.rotate(t.rot * Math.PI / 180);
-      g.drawImage(bm, -bm.width / 2, -bm.height / 2);
-      const png = `textos/c${pad(i + 1, 3)}_t${k}.png`;
-      files.push({ name: png, data: await canvasPng(c) });
-      const a = Math.max(0, t.start - cs) / 1000, b = (Math.min(ce, t.start + t.dur) - cs) / 1000;
-      const fd = Math.min(.45, t.dur / 3000);
-      let tf = 'format=rgba';
-      if (t.animIn && t.start >= cs) tf += `,fade=t=in:st=${a.toFixed(3)}:d=${fd.toFixed(3)}:alpha=1`;
-      if (t.animOut && t.start + t.dur <= ce) tf += `,fade=t=out:st=${Math.max(a, b - fd).toFixed(3)}:d=${fd.toFixed(3)}:alpha=1`;
-      inputs.push(`-loop 1 -t ${D.toFixed(3)} -i "${png}"`);
-      filt.push(`[${k}:v]${tf}[t${k}]`, `[${last}][t${k}]overlay=0:0:enable='between(t,${a.toFixed(3)},${b.toFixed(3)})'[o${k}]`);
-      last = `o${k}`;
+  $('expBar').style.width = '0%'; $('expLbl').textContent = 'Preparando…';
+  let reason = '';
+  if (!(window.VideoEncoder && window.VideoDecoder && window.VideoFrame)) reason = 'navegador sem aceleração';
+  else if (!currentFileObj) reason = 'filme não carregado';
+  if (!reason) {
+    try { await fastExport(h); return; }
+    catch (e) {
+      if (e && e.cancel) { toast('Exportação cancelada'); resetExportUi(); return; }
+      reason = e && e.message ? e.message : String(e);
+      console.warn('rápido falhou:', e);
     }
-    $('expBar').style.width = (10 + 80 * (i + 1) / P.seq.length).toFixed(0) + '%';
-    L.push(`echo Cena ${i + 1} de ${P.seq.length}: ${batSafe(sc.name)}`);
-    L.push(`ffmpeg -hide_banner -loglevel error -stats -y -ss ${(sc.start / 1000).toFixed(3)} -t ${D.toFixed(3)} -i "%FILME%" ${inputs.join(' ')} ` +
-      `-filter_complex "${filt.join(';')}" -map "[${last}]" -map 0:a:0? -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p ` +
-      `-c:a aac -b:a 160k -ar 48000 -ac 2 -shortest ${part}`);
-    L.push(`if errorlevel 1 ( echo ERRO na cena ${i + 1}. & pause & exit /b )`);
-    L.push(`echo file '${part}'>> lista_leve.txt`);
   }
-  const out = `${P.name.replace(/[\\/:*?"<>|&%^!]/g, '_')}_${outH}p.mp4`;
-  L.push('', 'echo Juntando as cenas...', `ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i lista_leve.txt -c copy "${out}"`,
-    'del parte_*.mp4 lista_leve.txt', 'echo.', `echo Pronto! Video: ${out}`, 'pause');
-  files.unshift({ name: 'EXPORTAR.bat', data: new TextEncoder().encode(L.join('\r\n')) });
-  files.push({ name: 'LEIA-ME.txt', data: new TextEncoder().encode(
-    'Leve Editor - exportar com ffmpeg\r\n\r\n1. Extraia este .zip numa pasta.\r\n2. Coloque nessa pasta o filme "' + film + '" e o ffmpeg.exe\r\n   (baixe em https://www.gyan.dev/ffmpeg/builds/ - pasta bin do zip).\r\n3. De dois cliques em EXPORTAR.bat.\r\n\r\nAnimacoes de entrada/saida viram fade (aparecer/sumir).\r\n') });
-  downloadBlob(makeZip(files), `exportar_${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.zip`);
-  $('expBar').style.width = '100%';
-  $('expLbl').textContent = 'Pacote baixado! Extraia, coloque o filme e o ffmpeg.exe na pasta e dê dois cliques em EXPORTAR.bat.';
+  $('expLbl').textContent = `Modo rápido indisponível (${reason}). Gravando em tempo real…`;
+  await recordExport(h);
 }
-function downloadScript(kind) {
-  const film = P.fileName || 'filme.mp4';
-  const lines = ['@echo off', 'chcp 65001 >nul', 'cd /d "%~dp0"', `set "FILME=${film}"`, '',
-    'echo ================================================',
-    `echo  Leve Editor - ${P.name.replace(/[&|<>^%]/g, '')}`,
-    'echo  Coloque este .bat, o ffmpeg.exe e o filme na MESMA pasta.',
-    'echo ================================================',
-    'where ffmpeg >nul 2>nul || if not exist ffmpeg.exe ( echo Falta o ffmpeg.exe nesta pasta. Baixe em https://www.gyan.dev/ffmpeg/builds/ & pause & exit /b )',
-    'if not exist "%FILME%" ( echo Nao achei o filme "%FILME%" nesta pasta. & pause & exit /b )',
-    'if exist lista_leve.txt del lista_leve.txt', ''];
-  P.seq.forEach((q, i) => {
-    const s = scene(q.scene); if (!s) return;
-    const ss = (s.start / 1000).toFixed(3), d = ((s.end - s.start) / 1000).toFixed(3), part = `parte_${pad(i + 1, 3)}.mp4`;
-    lines.push(`echo Cena ${i + 1} de ${P.seq.length}: ${s.name.replace(/[&|<>^%]/g, '')}`);
-    // -noaccurate_seek: vídeo e áudio começam juntos no mesmo quadro-chave (sem dessincronizar)
-    if (kind === 'copy') lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -noaccurate_seek -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c copy -avoid_negative_ts make_zero ${part}`);
-    else lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 48000 ${part}`);
-    lines.push(`echo file '${part}'>> lista_leve.txt`);
-  });
-  const out = `${P.name.replace(/[\\/:*?"<>|&%^]/g, '_')}_final.mp4`;
-  lines.push('', 'echo Juntando...', `ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i lista_leve.txt -c copy "${out}"`,
-    'del parte_*.mp4 lista_leve.txt', 'echo.', `echo Pronto: ${out}`, 'pause');
-  const blob = new Blob([lines.join('\r\n')], { type: 'application/octet-stream' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `exportar_${kind === 'copy' ? 'rapido' : 'exato'}.bat`;
-  document.body.appendChild(a); a.click(); a.remove();
-  toast('Script baixado — coloque junto do filme e do ffmpeg.exe e dê dois cliques');
+function resetExportUi() { exporting = false; $('expClose').textContent = 'Fechar'; }
+
+// ---------- leitura de MP4 (o mínimo necessário)
+const u8str = (u, o, n) => String.fromCharCode(...u.subarray(o, o + n));
+async function readBytes(file, off, len) { return new Uint8Array(await file.slice(off, off + len).arrayBuffer()); }
+function* boxesIn(u, start, end) {
+  const dv = new DataView(u.buffer, u.byteOffset, u.byteLength);
+  let o = start;
+  while (o + 8 <= end) {
+    let size = dv.getUint32(o), hdr = 8;
+    const type = u8str(u, o + 4, 4);
+    if (size === 1) { size = Number(dv.getBigUint64(o + 8)); hdr = 16; } else if (size === 0) size = end - o;
+    if (size < hdr) return;
+    yield { type, start: o, cs: o + hdr, end: Math.min(end, o + size) };
+    o += size;
+  }
+}
+const child = (u, b, type) => { for (const c of boxesIn(u, b.cs, b.end)) if (c.type === type) return c; return null; };
+const path = (u, b, ...types) => { let x = b; for (const t of types) { x = x && child(u, x, t); } return x; };
+
+async function parseMp4(file) {
+  let off = 0, moov = null;
+  while (off < file.size) {
+    const hd = await readBytes(file, off, 16);
+    if (hd.length < 8) break;
+    const dv = new DataView(hd.buffer);
+    let size = dv.getUint32(0), hdr = 8;
+    const type = u8str(hd, 4, 4);
+    if (size === 1) { size = Number(dv.getBigUint64(8)); hdr = 16; } else if (size === 0) size = file.size - off;
+    if (size < 8) break;
+    if (type === 'moov') moov = await readBytes(file, off + hdr, size - hdr);
+    if (type === 'moof') throw new Error('MP4 fragmentado');
+    off += size;
+  }
+  if (!moov) throw new Error('não é MP4');
+  const dv = new DataView(moov.buffer);
+  const root = { cs: 0, end: moov.length };
+  const mvhd = child(moov, root, 'mvhd');
+  const movieTs = dv.getUint8(mvhd.cs) === 1 ? dv.getUint32(mvhd.cs + 20) : dv.getUint32(mvhd.cs + 12);
+  const out = { video: null, audio: null };
+  for (const trak of boxesIn(moov, 0, moov.length)) {
+    if (trak.type !== 'trak') continue;
+    const mdia = child(moov, trak, 'mdia');
+    const hdlr = child(moov, mdia, 'hdlr');
+    const kind = u8str(moov, hdlr.cs + 8, 4);
+    if (kind !== 'vide' && kind !== 'soun') continue;
+    if ((kind === 'vide' && out.video) || (kind === 'soun' && out.audio)) continue;
+    const mdhd = child(moov, mdia, 'mdhd');
+    const ts = dv.getUint8(mdhd.cs) === 1 ? dv.getUint32(mdhd.cs + 20) : dv.getUint32(mdhd.cs + 12);
+    const stbl = path(moov, mdia, 'minf', 'stbl');
+    const stsd = child(moov, stbl, 'stsd');
+    const entry = boxesIn(moov, stsd.cs + 8, stsd.end).next().value;
+    const t = { kind, ts, fmt: entry.type, entryRaw: moov.slice(entry.start, entry.end) };
+    if (kind === 'vide') {
+      t.width = dv.getUint16(entry.cs + 24); t.height = dv.getUint16(entry.cs + 26);
+      for (const c of boxesIn(moov, entry.cs + 78, entry.end)) if (c.type === 'avcC' || c.type === 'hvcC') { t.cfgType = c.type; t.cfg = moov.slice(c.cs, c.end); }
+    }
+    // tabelas de amostras
+    const stsz = child(moov, stbl, 'stsz');
+    const fixed = dv.getUint32(stsz.cs + 4), n = dv.getUint32(stsz.cs + 8);
+    const size = new Uint32Array(n);
+    for (let i = 0; i < n; i++) size[i] = fixed || dv.getUint32(stsz.cs + 12 + 4 * i);
+    const dts = new Float64Array(n);
+    { const b = child(moov, stbl, 'stts'); const c = dv.getUint32(b.cs + 4); let k = 0, d = 0;
+      for (let e = 0; e < c; e++) { const cnt = dv.getUint32(b.cs + 8 + 8 * e), del = dv.getUint32(b.cs + 12 + 8 * e); for (let j = 0; j < cnt && k < n; j++) { dts[k++] = d; d += del; } } }
+    const cts = new Float64Array(n);
+    { const b = child(moov, stbl, 'ctts'); if (b) { const c = dv.getUint32(b.cs + 4); let k = 0;
+      for (let e = 0; e < c; e++) { const cnt = dv.getUint32(b.cs + 8 + 8 * e), o = dv.getInt32(b.cs + 12 + 8 * e); for (let j = 0; j < cnt && k < n; j++) cts[k++] = o; } } }
+    const key = new Uint8Array(n);
+    { const b = child(moov, stbl, 'stss'); if (b) { const c = dv.getUint32(b.cs + 4); for (let e = 0; e < c; e++) { const x = dv.getUint32(b.cs + 8 + 4 * e) - 1; if (x < n) key[x] = 1; } } else key.fill(1); }
+    const offs = new Float64Array(n);
+    { const co = child(moov, stbl, 'stco'), c64 = child(moov, stbl, 'co64'); const cb = co || c64; const nc = dv.getUint32(cb.cs + 4);
+      const chunkOff = i => co ? dv.getUint32(cb.cs + 8 + 4 * i) : Number(dv.getBigUint64(cb.cs + 8 + 8 * i));
+      const sc = child(moov, stbl, 'stsc'); const ne = dv.getUint32(sc.cs + 4);
+      let k = 0;
+      for (let e = 0; e < ne; e++) {
+        const first = dv.getUint32(sc.cs + 8 + 12 * e) - 1, per = dv.getUint32(sc.cs + 12 + 12 * e);
+        const last = e + 1 < ne ? dv.getUint32(sc.cs + 20 + 12 * e) - 1 : nc;
+        for (let ch = first; ch < last && k < n; ch++) { let o = chunkOff(ch); for (let j = 0; j < per && k < n; j++) { offs[k] = o; o += size[k]; k++; } }
+      } }
+    // lista de edição (atraso/ajuste do início)
+    let shift = 0, delay = 0;
+    const elst = path(moov, trak, 'edts', 'elst');
+    if (elst) {
+      const v = dv.getUint8(elst.cs), c = dv.getUint32(elst.cs + 4); let o = elst.cs + 8;
+      for (let e = 0; e < c; e++) {
+        const dur = v === 1 ? Number(dv.getBigUint64(o)) : dv.getUint32(o);
+        const mt = v === 1 ? Number(dv.getBigInt64(o + 8)) : dv.getInt32(o + 4);
+        o += v === 1 ? 20 : 12;
+        if (mt === -1) delay += dur / movieTs; else { shift = mt; break; }
+      }
+    }
+    const pts = new Float64Array(n), dtsUs = new Float64Array(n);
+    for (let i = 0; i < n; i++) { pts[i] = ((dts[i] + cts[i] - shift) / ts + delay) * 1e6; dtsUs[i] = ((dts[i] - shift) / ts + delay) * 1e6; }
+    Object.assign(t, { n, size, offs, pts, dtsUs, key });
+    out[kind === 'vide' ? 'video' : 'audio'] = t;
+  }
+  if (!out.video) throw new Error('sem trilha de vídeo');
+  return out;
+}
+class WinReader {
+  constructor(f) { this.f = f; this.base = 0; this.buf = null; }
+  async get(off, size) {
+    if (!this.buf || off < this.base || off + size > this.base + this.buf.length) {
+      this.buf = await readBytes(this.f, off, Math.max(size, 24 << 20)); this.base = off;
+    }
+    return this.buf.subarray(off - this.base, off - this.base + size);
+  }
 }
 
+// ---------- escrita de MP4
+const be32 = v => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, v >>> 0); return b; };
+const be16 = v => { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, v & 0xFFFF); return b; };
+const be64 = v => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(Math.round(v))); return b; };
+const ascii = s => new Uint8Array([...s].map(c => c.charCodeAt(0)));
+const zeros = n => new Uint8Array(n);
+/** lista grande de inteiros -> bytes (sem estourar a pilha com "...spread") */
+function u32list(a) { const b = new Uint8Array(a.length * 4), d = new DataView(b.buffer); for (let i = 0; i < a.length; i++) d.setUint32(i * 4, a[i] >>> 0); return b; }
+function u64list(a) { const b = new Uint8Array(a.length * 8), d = new DataView(b.buffer); for (let i = 0; i < a.length; i++) d.setBigUint64(i * 8, BigInt(Math.round(a[i]))); return b; }
+function cat(parts) { let n = 0; for (const p of parts) n += p.length; const o = new Uint8Array(n); let k = 0; for (const p of parts) { o.set(p, k); k += p.length; } return o; }
+const box = (type, ...p) => { const body = cat(p); return cat([be32(8 + body.length), ascii(type), body]); };
+const fbox = (type, ver, flags, ...p) => box(type, new Uint8Array([ver, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255]), ...p);
+const MATRIX = cat([0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000].map(be32));
+function sttsOf(deltas) {
+  const runs = [];
+  for (const d of deltas) { const r = runs[runs.length - 1]; if (r && r[1] === d) r[0]++; else runs.push([1, d]); }
+  const flat = []; for (const [c, d] of runs) flat.push(c, d);
+  return fbox('stts', 0, 0, be32(runs.length), u32list(flat));
+}
+function trakBox(id, kind, ts, durTs, movieDurMs, sampleEntry, sizes, offsets, deltas, keys, w, h, big) {
+  const stbl = box('stbl',
+    fbox('stsd', 0, 0, be32(1), sampleEntry),
+    sttsOf(deltas),
+    ...(keys ? [fbox('stss', 0, 0, be32(keys.length), u32list(keys.map(k => k + 1)))] : []),
+    fbox('stsc', 0, 0, be32(1), be32(1), be32(1), be32(1)),
+    fbox('stsz', 0, 0, be32(0), be32(sizes.length), u32list(sizes)),
+    big ? fbox('co64', 0, 0, be32(offsets.length), u64list(offsets)) : fbox('stco', 0, 0, be32(offsets.length), u32list(offsets)));
+  const minf = box('minf',
+    kind === 'vide' ? fbox('vmhd', 0, 1, zeros(8)) : fbox('smhd', 0, 0, zeros(4)),
+    box('dinf', fbox('dref', 0, 0, be32(1), fbox('url ', 0, 1))),
+    stbl);
+  const mdia = box('mdia',
+    fbox('mdhd', 0, 0, be32(0), be32(0), be32(ts), be32(durTs), be16(0x55c4), be16(0)),
+    fbox('hdlr', 0, 0, be32(0), ascii(kind), zeros(12), ascii(kind === 'vide' ? 'VideoHandler' : 'SoundHandler'), zeros(1)),
+    minf);
+  const tkhd = fbox('tkhd', 0, 3, be32(0), be32(0), be32(id), be32(0), be32(movieDurMs), zeros(8), be16(0), be16(0),
+    be16(kind === 'soun' ? 0x0100 : 0), be16(0), MATRIX, be32(w << 16), be32(h << 16));
+  return box('trak', tkhd, mdia);
+}
+function avc1Entry(w, h, avcC) {
+  return box('avc1', zeros(6), be16(1), zeros(16), be16(w), be16(h), be32(0x480000), be32(0x480000), be32(0), be16(1),
+    zeros(32), be16(0x18), be16(0xFFFF), box('avcC', avcC));
+}
+function buildMp4(v, a) {
+  // v: {samples:[{d,ts,key}], w,h, avcC}  a: {samples:[{d,ts}], ts, entryRaw} | null
+  const VT = 90000;
+  const ftyp = box('ftyp', ascii('isom'), be32(512), ascii('isom'), ascii('iso2'), ascii('avc1'), ascii('mp41'));
+  const all = v.samples.concat(a ? a.samples : []);
+  const dataLen = all.reduce((x, s) => x + s.d.length, 0);
+  const big = dataLen + 16 > 0xFFFFFFF0;
+  const mdatHdr = big ? cat([be32(1), ascii('mdat'), be64(dataLen + 16)]) : cat([be32(dataLen + 8), ascii('mdat')]);
+  let off = ftyp.length + mdatHdr.length;
+  const vOff = [], aOff = [];
+  for (const s of v.samples) { vOff.push(off); off += s.d.length; }
+  if (a) for (const s of a.samples) { aOff.push(off); off += s.d.length; }
+  const vs = v.samples;
+  const lastFrame = vs.length > 1 ? (vs[vs.length - 1].ts - vs[0].ts) / (vs.length - 1) : 33333;
+  const vDel = vs.map((s, i) => Math.max(1, Math.round(((i + 1 < vs.length ? vs[i + 1].ts : s.ts + lastFrame) - s.ts) * VT / 1e6)));
+  const vDurTs = vDel.reduce((x, y) => x + y, 0);
+  const durMs = Math.round(vDurTs * 1000 / VT);
+  const keys = []; vs.forEach((s, i) => { if (s.key) keys.push(i); });
+  const traks = [trakBox(1, 'vide', VT, vDurTs, durMs, avc1Entry(v.w, v.h, v.avcC), vs.map(s => s.d.length), vOff, vDel, keys, v.w, v.h, big)];
+  if (a && a.samples.length) {
+    const as = a.samples, AT = a.ts;
+    const aDel = as.map((s, i) => Math.max(1, Math.round(((i + 1 < as.length ? as[i + 1].ts : s.ts + 1024 * 1e6 / AT) - s.ts) * AT / 1e6)));
+    traks.push(trakBox(2, 'soun', AT, aDel.reduce((x, y) => x + y, 0), durMs, a.entryRaw, as.map(s => s.d.length), aOff, aDel, null, 0, 0, big));
+  }
+  const mvhd = fbox('mvhd', 0, 0, be32(0), be32(0), be32(1000), be32(durMs), be32(0x10000), be16(0x100), zeros(10), MATRIX, zeros(24), be32(traks.length + 1));
+  const moov = box('moov', mvhd, ...traks);
+  return new Blob([ftyp, mdatHdr, ...all.map(s => s.d), moov], { type: 'video/mp4' });
+}
+
+// ---------- o exportador rápido
+async function fastExport(h) {
+  const mp4 = await parseMp4(currentFileObj);
+  const V = mp4.video, A = mp4.audio;
+  if (V.fmt !== 'avc1' && V.fmt !== 'avc3') throw new Error('vídeo não é H.264');
+  if (!V.cfg || V.cfgType !== 'avcC') throw new Error('H.264 sem configuração');
+  const codec = 'avc1.' + [...V.cfg.subarray(1, 4)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const decCfg = { codec, description: V.cfg, codedWidth: V.width, codedHeight: V.height };
+  if (!(await VideoDecoder.isConfigSupported(decCfg)).supported) throw new Error('decodificador indisponível');
+
+  const outH = Math.min(h, P.h) & ~1, outW = Math.round(P.w * outH / P.h) & ~1;
+  const bitrate = outH >= 1080 ? 6e6 : outH >= 720 ? 3.5e6 : 1.8e6;
+  const cands = outH > 720 ? ['avc1.640028', 'avc1.4d0028', 'avc1.420028'] : ['avc1.64001f', 'avc1.4d001f', 'avc1.42001f'];
+  let encCfg = null;
+  for (const c of cands) {
+    const cfg = { codec: c, width: outW, height: outH, bitrate, framerate: 30, avc: { format: 'avc' } };
+    try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) { encCfg = cfg; break; } } catch (e) {}
+  }
+  if (!encCfg) throw new Error('codificador H.264 indisponível');
+
+  vid.pause();
+  exporting = true; expCancel = false; exportTextCache.clear();
+  $('expClose').textContent = 'Cancelar';
+  const cv = document.createElement('canvas'); cv.width = outW; cv.height = outH;
+  const cx = cv.getContext('2d', { alpha: false });
+  const rect = { x: 0, y: 0, w: outW, h: outH };
+  const st = clipStarts(), tot = st[st.length - 1];
+  const t0 = performance.now();
+
+  let err = null, avcC = null;
+  const vOut = [], aOut = [];
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (!avcC && meta && meta.decoderConfig && meta.decoderConfig.description) avcC = new Uint8Array(meta.decoderConfig.description);
+      const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d);
+      vOut.push({ d, ts: chunk.timestamp, key: chunk.type === 'key' });
+    },
+    error: e => { err = e; }
+  });
+  encoder.configure(encCfg);
+
+  let cur = null, lastKey = -1e12;
+  const decoder = new VideoDecoder({
+    output: frame => {
+      const c = cur, ts = frame.timestamp;
+      if (!c || ts < c.sUs || ts >= c.eUs) { frame.close(); return; }
+      cx.drawImage(frame, 0, 0, outW, outH);
+      frame.close();
+      drawTexts(cx, rect, c.g0 + (ts - c.sUs) / 1000, true);
+      const outTs = Math.round(c.off + (ts - c.sUs));
+      const vf = new VideoFrame(cv, { timestamp: outTs });
+      const kf = outTs - lastKey >= 2e6;
+      if (kf) lastKey = outTs;
+      encoder.encode(vf, { keyFrame: kf });
+      vf.close();
+      c.done = ts;
+    },
+    error: e => { err = e; }
+  });
+  decoder.configure(decCfg);
+
+  const reader = new WinReader(currentFileObj);
+  const wait = () => new Promise(r => setTimeout(r, 0));
+  let offUs = 0, lastUi = 0;
+  try {
+    for (let i = 0; i < P.seq.length; i++) {
+      const sc = scene(P.seq[i].scene); if (!sc) continue;
+      const sUs = sc.start * 1000, eUs = sc.end * 1000;
+      cur = { sUs, eUs, off: offUs, g0: st[i], done: sUs };
+      // quadro-chave anterior ao início
+      let k = 0;
+      for (let j = 0; j < V.n; j++) { if (V.dtsUs[j] > sUs + 1e6) break; if (V.key[j] && V.pts[j] <= sUs) k = j; }
+      for (let j = k; j < V.n; j++) {
+        if (err) throw err;
+        if (expCancel) throw { cancel: true };
+        if (V.dtsUs[j] > eUs + 1e6 || (V.key[j] && V.pts[j] >= eUs && j > k)) break;
+        const data = await reader.get(V.offs[j], V.size[j]);
+        decoder.decode(new EncodedVideoChunk({ type: V.key[j] ? 'key' : 'delta', timestamp: V.pts[j], data }));
+        while (decoder.decodeQueueSize > 10 || encoder.encodeQueueSize > 6) await wait();
+        const now = performance.now();
+        if (now - lastUi > 150) {
+          lastUi = now;
+          const g = st[i] + Math.max(0, (cur.done - sUs) / 1000);
+          const pct = Math.min(99, 100 * g / tot), el = (now - t0) / 1000;
+          $('expBar').style.width = pct.toFixed(1) + '%';
+          $('expLbl').textContent = `Exportando… ${Math.floor(pct)}%` + (pct > 3 ? ` • falta ~${fmt(el * (100 - pct) / pct * 1000, false)}` : '');
+        }
+      }
+      await decoder.flush();
+      // áudio original copiado (sem recodificar), cortado no tamanho exato da cena
+      if (A) for (let j = 0; j < A.n; j++) {
+        const p = A.pts[j];
+        if (p < sUs) continue;
+        if (p >= eUs) break;
+        aOut.push({ d: (await reader.get(A.offs[j], A.size[j])).slice(), ts: offUs + (p - sUs) });
+      }
+      offUs += eUs - sUs;
+    }
+    await encoder.flush();
+    if (err) throw err;
+    if (!vOut.length || !avcC) throw new Error('nada foi codificado');
+    $('expLbl').textContent = 'Montando o arquivo…';
+    const blob = buildMp4({ samples: vOut, w: outW, h: outH, avcC }, A ? { samples: aOut, ts: A.ts, entryRaw: A.entryRaw } : null);
+    const name = `${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.mp4`;
+    downloadBlob(blob, name);
+    $('expBar').style.width = '100%';
+    $('expLbl').textContent = `Pronto em ${fmt(performance.now() - t0, false)}! Baixado: ${name}`;
+  } finally {
+    try { decoder.close(); } catch (e) {}
+    try { encoder.close(); } catch (e) {}
+    exporting = false;
+    $('expClose').textContent = 'Fechar';
+  }
+}
 // ---------------------------------------------------------------- projeto: abrir / salvar / novo
 function saveProjectFile() {
   commit();
