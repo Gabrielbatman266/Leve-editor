@@ -85,7 +85,9 @@ object Mp4Tools {
                 var firstPts = Long.MAX_VALUE
                 while (true) {
                     val pts = vex.sampleTime
-                    if (pts < 0 || pts >= endUs) break
+                    // lê um pouco além do fim (ordem de decodificação) para não perder B-frames
+                    if (pts < 0 || pts >= endUs + 300_000) break
+                    if (pts >= endUs) { vex.advance(); continue }
                     val size = vex.readSampleData(buf, 0)
                     if (size < 0) break
                     val rel = pts - kfUs
