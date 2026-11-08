@@ -15,3 +15,13 @@ As cenas não copiam o vídeo: só guardam início e fim, então não ocupam esp
 O APK é gerado automaticamente pelo GitHub Actions a cada push — veja a aba **Releases**.
 
 Feito com Kotlin + AndroidX Media3 (ExoPlayer + Transformer).
+
+## Versão PC (leve, roda até no Windows 7)
+Arquivo único: [`pc/LeveEditor-PC.html`](pc/LeveEditor-PC.html) — baixe na aba **Releases** e abra no **Chrome** ou **Firefox**. Não instala nada.
+
+- ✂ **Cortar**: linha do tempo com miniaturas, mini-mapa do filme, zoom (Ctrl+roda), Início/Fim (I/O), prévia travada no corte, repetir.
+- 🎬 **Montagem**: faixa de cenas (arraste para reordenar) + faixa de textos (arraste/estique), textos na prévia (mover, girar, tamanho).
+- **Textos** iguais ao app: estilos prontos, fonte, cor, contorno, brilho, fundo, sombra, animações de entrada/saída/loop.
+- **Atalhos**: Espaço, ←/→ (quadro), Shift+←/→ (1s), I, O, S, T, Del, Ctrl+Z/Y.
+- **Exportar**: grava com textos no navegador (WebM/MP4, leva o tempo do vídeo) **ou** baixa um script `.bat` do ffmpeg (rápido, sem textos).
+- **Projeto**: salva sozinho no navegador e em `.leve.json` (mesmo formato do app Android).

@@ -283,6 +283,7 @@ class MontageActivity : AppCompatActivity(), MontageTimelineView.Listener, TextL
                 if (stopAt >= 0 && g >= stopAt) { player.pause(); stopAt = -1 }
                 timeline.setTime(g)
                 textLayer.timeMs = g
+                textLayer.staticSelected = !player.isPlaying
                 tvPos.text = "${Fmt.time(g)} / ${Fmt.time(total, false)}"
             }
             handler.postDelayed(this, 30)

@@ -42,6 +42,10 @@ class TextLayerView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet?
         set(v) { if (field != v) { field = v; invalidate() } }
     var selectedId: String? = null
         set(v) { field = v; invalidate() }
+    /** Pausado: o texto selecionado aparece inteiro (sem animação), para editar. */
+    var staticSelected = true
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val still = TextAnim.State()
 
     private val d = resources.displayMetrics.density
     private val content = RectF()
@@ -96,9 +100,9 @@ class TextLayerView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet?
         if (content.isEmpty) computeContent()
         selVisible = false
         for (t in p.texts) {
-            val s = TextAnim.state(t, timeMs, st)
             val isSel = t.id == selectedId
-            if (s == null) continue
+            var s = TextAnim.state(t, timeMs, st) ?: continue
+            if (isSel && staticSelected) s = still
             val b = bitmapFor(t)
             val cx = content.left + (t.x + s.dx) * content.width()
             val cy = content.top + (t.y + s.dy) * content.height()

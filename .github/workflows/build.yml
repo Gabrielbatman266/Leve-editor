@@ -28,7 +28,9 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Leve Editor build ${{ github.run_number }}
-          files: LeveEditor.apk
+          files: |
+            LeveEditor.apk
+            pc/LeveEditor-PC.html
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

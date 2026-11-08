@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leve Editor PC</title>
+<style>
+:root{--bg:#000;--panel:#121214;--card:#1c1c20;--line:#2a2a30;--text:#f2f2f5;--sub:#9a9aa5;--accent:#22d3ee;--danger:#f43f5e;--purple:#6d28d9}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.35 "Segoe UI",Roboto,Arial,sans-serif;overflow:hidden;user-select:none}
+button{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:#44444c;background:#24242a}
+button:active{transform:translateY(1px)}
+button.accent{background:var(--accent);color:#000;border-color:var(--accent);font-weight:600}
+button.on{background:#0e7490;border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+input,select,textarea{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+textarea{width:100%;resize:vertical;min-height:54px;user-select:text}
+input[type=range]{width:100%;padding:0;accent-color:var(--accent)}
+#app{display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+header .logo{font-weight:700;font-size:15px;margin-right:6px}
+header .logo span{color:var(--accent)}
+#projName{min-width:80px;padding:4px 6px;border-radius:6px;outline:none;user-select:text;color:var(--sub)}
+#projName:focus{background:var(--card);color:var(--text)}
+.sp{flex:1}
+main{flex:1 1 auto;display:flex;min-height:0}
+#left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+#stage{position:relative;flex:1 1 auto;background:#000;min-height:120px;overflow:hidden}
+#vid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#overlay{position:absolute;inset:0;width:100%;height:100%}
+#emptyMsg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--sub);text-align:center;padding:20px}
+#emptyMsg b{color:var(--text);font-size:18px}
+#badge{position:absolute;left:8px;top:8px;background:#000b;color:var(--accent);font:12px monospace;padding:3px 8px;border-radius:4px;display:none}
+#cutProg{position:absolute;left:0;right:0;bottom:0;height:4px;background:#ffffff40;display:none}
+#cutProg i{display:block;height:100%;width:0;background:var(--accent)}
+#transport{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--panel);border-top:1px solid var(--line);flex:0 0 auto}
+#time{font:12px monospace;color:var(--sub);min-width:150px}
+#bPlay{min-width:54px;font-size:16px}
+.modeTabs{display:flex;gap:4px;margin-left:auto}
+aside{flex:0 0 330px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:0;border-radius:0;background:transparent;color:var(--sub);padding:9px}
+.tabs button.sel{color:var(--accent);box-shadow:inset 0 -2px var(--accent);font-weight:600}
+.pane{flex:1 1 auto;overflow:auto;padding:8px;display:none}
+.pane.show{display:block}
+.scene{display:flex;gap:8px;align-items:center;background:var(--card);border-radius:10px;padding:6px;margin-bottom:6px;cursor:pointer;border:1px solid transparent}
+.scene:hover{border-color:#3a3a42}
+.scene .bar{width:4px;align-self:stretch;border-radius:2px}
+.scene canvas{width:88px;height:50px;border-radius:4px;background:var(--line);flex:0 0 auto}
+.scene .info{flex:1;min-width:0}
+.scene .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scene .tm{color:var(--sub);font-size:11px}
+.scene .act{display:flex;flex-direction:column;gap:3px}
+.scene .act button{padding:2px 7px;font-size:12px}
+.muted{color:var(--sub)}
+.row{display:flex;gap:6px;align-items:center;margin:4px 0}
+.row label{min-width:86px;color:var(--sub)}
+details{background:var(--card);border-radius:10px;margin-bottom:6px;padding:4px 8px}
+details summary{cursor:pointer;padding:5px 0;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:4px 0}
+.grid.f3{grid-template-columns:repeat(3,1fr)}
+.tile{background:#2a2a30;border:1px solid transparent;border-radius:8px;padding:3px;text-align:center;cursor:pointer;font-size:11px;color:#b8b8c2}
+.tile:hover{border-color:#55555f}
+.tile.sel{border-color:var(--accent);color:var(--accent)}
+.tile canvas{width:100%;height:40px;display:block}
+.sw{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0}
+.sw i{width:22px;height:22px;border-radius:50%;border:1px solid #55555f;cursor:pointer}
+.sw i.sel{outline:2px solid var(--accent);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.chips button{padding:4px 9px;border-radius:14px;font-size:12px}
+footer{flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line)}
+.tools{display:flex;align-items:center;gap:5px;padding:6px 8px;flex-wrap:wrap}
+.tools .lbl{color:var(--text);margin:0 6px;font-size:12px}
+.tlwrap{position:relative;height:150px}
+.tlwrap canvas{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none}
+#mtlwrap{height:190px}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:520px;width:92%}
+dialog::backdrop{background:#000a}
+dialog h3{margin:0 0 10px}
+dialog .opts button{display:block;width:100%;text-align:left;margin:6px 0;padding:10px}
+dialog .opts small{display:block;color:var(--sub);font-weight:400}
+.prog{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0}
+.prog i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+kbd{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font:11px monospace}
+table.keys td{padding:3px 8px 3px 0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#24242a;border:1px solid var(--line);padding:8px 14px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">Leve <span>Editor</span> PC</div>
+    <div id="projName" contenteditable="true" spellcheck="false" title="Clique para renomear">Projeto</div>
+    <button id="bOpenVideo" title="Abrir o filme (Ctrl+O)">🎬 Abrir filme</button>
+    <button id="bOpenProj">📂 Abrir projeto</button>
+    <button id="bSaveProj" title="Baixar o projeto (.json)">💾 Salvar projeto</button>
+    <button id="bNew">✚ Novo</button>
+    <div class="sp"></div>
+    <button id="bUndo" title="Desfazer (Ctrl+Z)">↶</button>
+    <button id="bRedo" title="Refazer (Ctrl+Y)">↷</button>
+    <button id="bHelp">⌨ Atalhos</button>
+    <button id="bExport" class="accent">⬆ Exportar</button>
+  </header>
+  <main>
+    <section id="left">
+      <div id="stage">
+        <video id="vid" preload="auto" playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="badge"></div>
+        <div id="cutProg"><i></i></div>
+        <div id="emptyMsg"><b>Leve Editor PC</b><span id="emptyText">Abra um filme para começar (MP4 funciona melhor).</span><button class="accent" id="bOpenVideo2">🎬 Abrir filme</button></div>
+      </div>
+      <div id="transport">
+        <span id="time">00:00.0 / 00:00</span>
+        <button id="bBack1" title="−1s (Shift+←)">−1s</button>
+        <button id="bBackF" title="−1 quadro (←)">◂</button>
+        <button id="bPlay" title="Tocar/pausar (Espaço)">▶</button>
+        <button id="bFwdF" title="+1 quadro (→)">▸</button>
+        <button id="bFwd1" title="+1s (Shift+→)">+1s</button>
+        <div class="modeTabs">
+          <button id="mCut" class="on" title="Modo corte (1)">✂ Cortar</button>
+          <button id="mMont" title="Modo montagem (2)">🎬 Montagem</button>
+        </div>
+      </div>
+    </section>
+    <aside>
+      <div class="tabs"><button id="tScenes" class="sel">Cenas</button><button id="tText">Texto</button></div>
+      <div id="paneScenes" class="pane show">
+        <div class="row"><span id="scenesInfo" class="muted" style="flex:1">Sem cenas</span><button id="bAddAll">Todas → montagem</button></div>
+        <div id="sceneList"></div>
+      </div>
+      <div id="paneText" class="pane"><div id="textEditor"></div></div>
+    </aside>
+  </main>
+  <footer>
+    <div id="cutFooter">
+      <div class="tools">
+        <button id="bIn" title="Marcar início (I)">[ Início</button>
+        <button id="bOut" title="Marcar fim (O)">Fim ]</button>
+        <button id="bClear">Limpar</button>
+        <button id="bSave" class="accent" title="Salvar cena (S)">✂ Salvar cena</button>
+        <button id="bCancelEdit" style="display:none">Cancelar ajuste</button>
+        <button id="bLock" class="on" title="Prévia travada no corte (L)">🔒 Travado</button>
+        <button id="bLoop" title="Repetir o corte (R)">🔁</button>
+        <span id="selLbl" class="lbl">Marque o Início (I) e o Fim (O)</span>
+        <div class="sp"></div>
+        <span id="zoomLbl" class="muted"></span>
+        <button id="bZOut" title="Zoom − (Ctrl+roda)">−</button>
+        <button id="bZFit">Tudo</button>
+        <button id="bZFine">Preciso</button>
+        <button id="bZIn" title="Zoom +">+</button>
+      </div>
+      <div class="tlwrap"><canvas id="tl"></canvas></div>
+    </div>
+    <div id="montFooter" style="display:none">
+      <div class="tools" id="montTools"></div>
+      <div class="tlwrap" id="mtlwrap"><canvas id="mtl"></canvas></div>
+    </div>
+  </footer>
+</div>
+
+<input type="file" id="fVideo" accept="video/*" hidden>
+<input type="file" id="fProj" accept=".json,application/json" hidden>
+
+<dialog id="dlgExport">
+  <h3>Exportar</h3>
+  <div id="expInfo" class="muted"></div>
+  <div class="opts" id="expOpts">
+    <button data-h="720" class="accent">720p com textos — recomendado<small>Grava no navegador. Leva o tempo do vídeo (10 min de montagem = ~10 min). Não minimize a aba.</small></button>
+    <button data-h="1080">1080p com textos<small>Melhor qualidade, arquivo maior.</small></button>
+    <button data-h="480">480p com textos<small>Mais leve para PC fraco.</small></button>
+    <button data-s="copy">⚡ Script ffmpeg rápido (sem textos)<small>Baixa um .bat que corta e junta sem recompressão, em segundos. Cortes no quadro-chave mais próximo (~1s).</small></button>
+    <button data-s="exact">🎯 Script ffmpeg exato (sem textos)<small>Recodifica com corte exato. Bem mais rápido que a gravação.</small></button>
+  </div>
+  <div id="expRun" style="display:none">
+    <div id="expLbl">Preparando…</div>
+    <div class="prog"><i id="expBar"></i></div>
+    <div class="muted">Deixe esta aba aberta e visível até terminar.</div>
+  </div>
+  <div class="row" style="justify-content:flex-end;margin-top:10px"><button id="expClose">Fechar</button></div>
+</dialog>
+
+<dialog id="dlgHelp">
+  <h3>Atalhos de teclado</h3>
+  <table class="keys">
+    <tr><td><kbd>Espaço</kbd></td><td>Tocar / pausar</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Um quadro para trás / frente</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>←</kbd> <kbd>→</kbd></td><td>1 segundo</td></tr>
+    <tr><td><kbd>I</kbd> / <kbd>O</kbd></td><td>Marcar Início / Fim do corte</td></tr>
+    <tr><td><kbd>S</kbd></td><td>Salvar cena</td></tr>
+    <tr><td><kbd>L</kbd> / <kbd>R</kbd></td><td>Travar no corte / Repetir</td></tr>
+    <tr><td><kbd>1</kbd> / <kbd>2</kbd></td><td>Modo Cortar / Montagem</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Novo texto (na montagem)</td></tr>
+    <tr><td><kbd>Del</kbd></td><td>Apagar o que está selecionado</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Desfazer / Refazer</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+roda</td><td>Zoom na linha do tempo</td></tr>
+    <tr><td>Roda</td><td>Andar na linha do tempo</td></tr>
+    <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Início / fim</td></tr>
+  </table>
+  <p class="muted">Na prévia: arraste o texto para mover, a bolinha ↻ gira e aumenta, duplo clique edita.<br>Na montagem: arraste uma cena para mudar a ordem; arraste/estique as barras roxas de texto.</p>
+  <div class="row" style="justify-content:flex-end"><button onclick="this.closest('dialog').close()">OK</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   Leve Editor PC — um arquivo só, sem instalar nada.
+   Funciona no Chrome 109+ / Firefox 115+ (Windows 7 incluso).
+   Projeto no mesmo formato do app Android.
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+const LS_KEY = 'leveEditorPC.project';
+
+// ---------------------------------------------------------------- utilidades
+const newId = () => (Math.random().toString(16).slice(2) + Date.now().toString(16)).slice(0, 12);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pad = (n, l = 2) => String(n).padStart(l, '0');
+function fmt(ms, tenths = true) {
+  const t = Math.max(0, Math.floor(ms));
+  const h = Math.floor(t / 3600000), m = Math.floor(t / 60000) % 60, s = Math.floor(t / 1000) % 60, d = Math.floor((t % 1000) / 100);
+  const base = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  return tenths ? `${base}.${d}` : base;
+}
+const fdur = ms => ms < 60000 ? (ms / 1000).toFixed(1).replace('.', ',') + 's' : fmt(ms, false);
+/** cor ARGB (int com sinal, igual ao Android) → css */
+function css(argb, mulA = 1) {
+  const a = (((argb >>> 24) & 255) / 255) * mulA;
+  return `rgba(${(argb >>> 16) & 255},${(argb >>> 8) & 255},${argb & 255},${a.toFixed(3)})`;
+}
+const I = v => v | 0;  // força int com sinal
+let toastT;
+function toast(s) { const t = $('toast'); t.textContent = s; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+
+const SCENE_COLORS = [0xFF22D3EE, 0xFFF43F5E, 0xFFFACC15, 0xFF4ADE80, 0xFFA78BFA, 0xFFFB923C, 0xFFF472B6, 0xFFE5E7EB].map(I);
+const PALETTE = [0xFFFFFFFF, 0xFF000000, 0xFF9CA3AF, 0xFFFACC15, 0xFFFB923C, 0xFFF43F5E, 0xFFF472B6, 0xFFA78BFA, 0xFF6366F1, 0xFF22D3EE, 0xFF4ADE80, 0xFF16A34A, 0xFF92400E, 0xFFFDE68A, 0xFF7F1D1D].map(I);
+
+// ---------------------------------------------------------------- projeto (mesmo formato do Android)
+function blankProject() {
+  return { id: newId(), name: 'Projeto', uri: '', fileName: '', duration: 0, w: 1920, h: 1080, last: 0, updated: Date.now(), scenes: [], seq: [], texts: [] };
+}
+let P = blankProject();
+const scene = id => P.scenes.find(s => s.id === id);
+const sortedScenes = () => P.scenes.slice().sort((a, b) => a.start - b.start);
+function clipStarts() {
+  const a = [0];
+  P.seq.forEach((s, i) => { const sc = scene(s.scene); a.push(a[i] + (sc ? sc.end - sc.start : 0)); });
+  return a;
+}
+const totalMs = () => { const a = clipStarts(); return a[a.length - 1]; };
+
+function newText(text, start, dur) {
+  return { id: newId(), text, start, dur, x: .5, y: .85, scale: 1, rot: 0, font: 0, color: I(0xFFFFFFFF), opacity: 1,
+    strokeColor: I(0xFF000000), strokeW: 0, glowColor: I(0xFF22D3EE), glow: 0, bgColor: I(0xFF000000), bgAlpha: 0, bgRound: .35,
+    shadow: 0, shadowBlur: .35, align: 1, animIn: 0, animOut: 0, animLoop: 0 };
+}
+function normalize(p) {
+  const b = blankProject();
+  const o = Object.assign(b, p);
+  o.scenes = (o.scenes || []).map(s => ({ id: s.id, name: s.name || 'Cena', start: +s.start, end: +s.end, color: I(s.color ?? SCENE_COLORS[0]) }));
+  o.seq = (o.seq || []).filter(s => o.scenes.some(c => c.id === s.scene));
+  o.texts = (o.texts || []).map(t => Object.assign(newText('', 0, 3000), t));
+  return o;
+}
+
+// ---------------------------------------------------------------- desfazer + salvamento automático
+let undoStack = [], redoStack = [], lastSnap = null, commitT = 0;
+function commit() {
+  clearTimeout(commitT);
+  P.name = $('projName').textContent.trim() || 'Projeto';
+  const s = JSON.stringify(P);
+  if (s === lastSnap) return;
+  if (lastSnap) { undoStack.push(lastSnap); if (undoStack.length > 100) undoStack.shift(); }
+  redoStack = [];
+  lastSnap = s;
+  P.updated = Date.now();
+  try { localStorage.setItem(LS_KEY, JSON.stringify(P)); } catch (e) {}
+  refreshScenes(); refreshMontTools(); dirty();
+}
+function commitSoon() { clearTimeout(commitT); commitT = setTimeout(commit, 450); }
+function restore(snap) {
+  const keepSel = selText;
+  P = normalize(JSON.parse(snap)); lastSnap = snap;
+  try { localStorage.setItem(LS_KEY, snap); } catch (e) {}
+  if (!P.texts.some(t => t.id === keepSel)) selText = null;
+  if (selClip >= P.seq.length) selClip = -1;
+  textCache.clear();
+  afterProjectChange();
+}
+function undo() { if (!undoStack.length) return toast('Nada para desfazer'); redoStack.push(lastSnap); restore(undoStack.pop()); toast('Desfeito'); }
+function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restore(redoStack.pop()); toast('Refeito'); }
+
+// ---------------------------------------------------------------- vídeo
+const vid = $('vid');
+let videoURL = null, videoReady = false;
+const thumbVid = document.createElement('video');
+thumbVid.muted = true; thumbVid.preload = 'auto';
+
+function openVideoFile(file) {
+  const sameFilm = P.fileName && P.fileName === file.name;
+  if (!sameFilm && (P.scenes.length || P.seq.length)) {
+    if (confirm(`Começar um NOVO projeto com "${file.name}"?\n\nOK = novo projeto\nCancelar = usar este filme no projeto atual`)) {
+      P = blankProject(); undoStack = []; redoStack = []; lastSnap = null; textCache.clear();
+      selClip = -1; selText = null; editingSceneId = null; inMs = outMs = -1;
+    }
+  }
+  if (videoURL) URL.revokeObjectURL(videoURL);
+  videoURL = URL.createObjectURL(file);
+  videoReady = false;
+  thumbReset();
+  P.fileName = file.name; P.uri = file.name;
+  if (P.name === 'Projeto') P.name = file.name.replace(/\.[^.]+$/, '');
+  $('projName').textContent = P.name;
+  vid.src = videoURL;
+  thumbVid.src = videoURL;
+}
+vid.addEventListener('loadedmetadata', () => {
+  videoReady = true;
+  const d = Math.round(vid.duration * 1000);
+  if (isFinite(d) && d > 0) P.duration = d;
+  if (vid.videoWidth) { P.w = vid.videoWidth; P.h = vid.videoHeight; }
+  $('emptyMsg').style.display = 'none';
+  thumbPrefetch();
+  commit();
+  if (mode === 'cut') seekFilm(clamp(P.last || 0, 0, P.duration)); else seekG(0);
+  cutTL.fit();
+  resizeAll();
+});
+vid.addEventListener('error', () => {
+  toast('Não consegui abrir esse vídeo. Tente um MP4 (H.264).');
+  $('emptyMsg').style.display = 'flex';
+});
+vid.addEventListener('play', () => $('bPlay').textContent = '⏸');
+vid.addEventListener('pause', () => $('bPlay').textContent = '▶');
+
+// ---------------------------------------------------------------- miniaturas (vídeo escondido + fila)
+const thumbs = new Map();     // chave ms -> canvas
+const coarse = [];            // [ms, canvas] ordenado
+let tQueue = [], tQueued = new Set(), tCoarseQ = [], tBusy = false, tJob = null, tTimer = 0, redrawSoon = false;
+function thumbReset() { thumbs.clear(); coarse.length = 0; tQueue = []; tQueued.clear(); tCoarseQ = []; tBusy = false; tJob = null; }
+function thumbPrefetch() {
+  if (!P.duration) return;
+  tCoarseQ = [];
+  for (let i = 0; i < 60; i++) tCoarseQ.push(Math.floor(P.duration * i / 60));
+  thumbKick();
+}
+function getThumb(ms) {
+  const k = Math.round(ms);
+  const c = thumbs.get(k);
+  if (c) return c;
+  if (!tQueued.has(k)) {
+    tQueued.add(k); tQueue.push(k);
+    if (tQueue.length > 40) tQueued.delete(tQueue.shift());
+    thumbKick();
+  }
+  if (!coarse.length) return null;
+  let best = coarse[0];
+  for (const e of coarse) if (Math.abs(e[0] - ms) < Math.abs(best[0] - ms)) best = e;
+  return best[1];
+}
+function thumbKick() {
+  if (tBusy || !thumbVid.src || thumbVid.readyState < 1) return;
+  let job = null;
+  if (tQueue.length) { const k = tQueue.pop(); tQueued.delete(k); job = { ms: k, coarse: false }; }
+  else if (tCoarseQ.length) job = { ms: tCoarseQ.shift(), coarse: true };
+  if (!job) return;
+  tBusy = true; tJob = job;
+  clearTimeout(tTimer);
+  tTimer = setTimeout(() => { tBusy = false; tJob = null; thumbKick(); }, 2500);
+  thumbVid.currentTime = Math.min(job.ms / 1000, Math.max(0, thumbVid.duration - 0.05));
+}
+thumbVid.addEventListener('loadedmetadata', thumbKick);
+thumbVid.addEventListener('seeked', () => {
+  const job = tJob; if (!job) return;
+  clearTimeout(tTimer);
+  const c = document.createElement('canvas');
+  const ar = (thumbVid.videoWidth || 16) / (thumbVid.videoHeight || 9);
+  c.height = 72; c.width = Math.round(72 * ar);
+  try { c.getContext('2d').drawImage(thumbVid, 0, 0, c.width, c.height); } catch (e) {}
+  if (job.coarse) { coarse.push([job.ms, c]); coarse.sort((a, b) => a[0] - b[0]); }
+  else thumbs.set(job.ms, c);
+  if (thumbs.size > 400) thumbs.delete(thumbs.keys().next().value);
+  tBusy = false; tJob = null;
+  if (!redrawSoon) { redrawSoon = true; setTimeout(() => { redrawSoon = false; dirty(); refreshSceneThumbs(); }, 60); }
+  thumbKick();
+});
+function drawCrop(g, img, x, y, w, h) {
+  if (!img || w <= 0 || h <= 0) return;
+  const s = Math.max(w / img.width, h / img.height);
+  const sw = Math.min(img.width, w / s), sh = Math.min(img.height, h / s);
+  g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+}
+
+// ---------------------------------------------------------------- texto: fontes, estilos, desenho, animação (igual ao Android)
+const FONTS = [
+  ['Padrão', '700', 'normal', 'Arial, "Segoe UI", sans-serif'],
+  ['Médio', '500', 'normal', '"Segoe UI", Roboto, Arial, sans-serif'],
+  ['Fino', '300', 'normal', '"Segoe UI Light", "Segoe UI", Roboto, sans-serif'],
+  ['Pesado', '900', 'normal', '"Arial Black", "Segoe UI Black", Impact, sans-serif'],
+  ['Condensado', '700', 'normal', '"Arial Narrow", "Roboto Condensed", sans-serif'],
+  ['Serifa', '700', 'normal', 'Georgia, "Times New Roman", serif'],
+  ['Clássico', '700', 'italic', 'Georgia, "Times New Roman", serif'],
+  ['Máquina', '700', 'normal', 'Consolas, "Courier New", monospace'],
+  ['Casual', '400', 'normal', '"Comic Sans MS", "Comic Neue", cursive'],
+  ['Cursiva', '700', 'normal', '"Segoe Script", "Brush Script MT", cursive'],
+  ['Versalete', '700', 'normal', 'Arial, sans-serif', true],
+];
+const PRESETS = (() => {
+  const reset = t => { t.color = I(0xFFFFFFFF); t.opacity = 1; t.strokeW = 0; t.strokeColor = I(0xFF000000); t.glow = 0; t.bgAlpha = 0; t.bgRound = .35; t.shadow = 0; t.shadowBlur = .35; };
+  return [
+    ['Simples', t => { reset(t); t.shadow = .5; }],
+    ['Contorno', t => { reset(t); t.strokeW = .6; }],
+    ['Amarelo', t => { reset(t); t.color = I(0xFFFACC15); t.strokeW = .55; }],
+    ['Caixa preta', t => { reset(t); t.bgColor = I(0xFF000000); t.bgAlpha = .75; }],
+    ['Caixa branca', t => { reset(t); t.color = I(0xFF000000); t.bgColor = I(0xFFFFFFFF); t.bgAlpha = .95; }],
+    ['Neon', t => { reset(t); t.glowColor = I(0xFF22D3EE); t.glow = .85; }],
+    ['Neon rosa', t => { reset(t); t.glowColor = I(0xFFF472B6); t.glow = .85; }],
+    ['Legenda', t => { reset(t); t.bgAlpha = .5; t.bgRound = .2; t.font = 1; }],
+    ['Cinema', t => { reset(t); t.font = 5; t.shadow = .85; t.shadowBlur = .6; }],
+    ['Destaque', t => { reset(t); t.color = I(0xFF000000); t.bgColor = I(0xFFFACC15); t.bgAlpha = 1; }],
+    ['Alerta', t => { reset(t); t.bgColor = I(0xFFE11D48); t.bgAlpha = 1; t.bgRound = .15; }],
+    ['Quadrinho', t => { reset(t); t.font = 3; t.color = I(0xFFFACC15); t.strokeW = .9; t.shadow = .6; }],
+    ['Fogo', t => { reset(t); t.color = I(0xFFFFEDD5); t.glowColor = I(0xFFF97316); t.glow = .9; }],
+    ['Elegante', t => { reset(t); t.font = 6; t.color = I(0xFFFDE68A); t.shadow = .6; }],
+  ];
+})();
+const IN_NAMES = ['Nenhuma', 'Aparecer', 'Subir', 'Zoom', 'Deslizar', 'Cair', 'Girar'];
+const OUT_NAMES = ['Nenhuma', 'Sumir', 'Descer', 'Zoom', 'Deslizar', 'Subir'];
+const LOOP_NAMES = ['Nenhum', 'Pulsar', 'Balançar', 'Flutuar', 'Piscar'];
+const BASE = 0.065;
+
+function fontCss(t, px) {
+  const f = FONTS[clamp(t.font, 0, FONTS.length - 1)];
+  return `${f[2]} ${f[4] ? 'small-caps ' : ''}${f[1]} ${px}px ${f[3]}`;
+}
+const styleKey = t => [t.text, t.scale, t.font, t.color, t.opacity, t.strokeColor, t.strokeW, t.glowColor, t.glow, t.bgColor, t.bgAlpha, t.bgRound, t.shadow, t.shadowBlur, t.align].join('|');
+
+/** Desenha o texto num canvas (centro = centro do texto). Igual ao TextRenderer do Android. */
+function renderText(t, refH) {
+  let px = refH * BASE * t.scale;
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const lines = (t.text || ' ').split('\n');
+  g.font = fontCss(t, px);
+  let maxW = Math.max(...lines.map(l => g.measureText(l).width));
+  const limit = refH * 3.2;
+  if (maxW > limit) { px *= limit / maxW; g.font = fontCss(t, px); maxW = Math.max(...lines.map(l => g.measureText(l).width)); }
+  const asc = px * 0.93, desc = px * 0.24, lineH = asc + desc, spacing = lineH * 1.05;
+  const hasBg = t.bgAlpha > 0.01;
+  const padX = hasBg ? px * .42 : 0, padY = hasBg ? px * .2 : 0;
+  const strokePx = t.strokeW * px * .16;
+  const glowR = t.glow * px * .55;
+  const shadowR = 1 + t.shadowBlur * px * .3, shadowOff = px * .06;
+  const margin = Math.ceil(strokePx + Math.max(glowR * 1.2, t.shadow > 0 ? shadowR + shadowOff : 0) + 3);
+  const boxW = maxW + 2 * padX, boxH = spacing * (lines.length - 1) + lineH + 2 * padY;
+  c.width = clamp(Math.ceil(boxW + 2 * margin), 1, 4096);
+  c.height = clamp(Math.ceil(boxH + 2 * margin), 1, 4096);
+  g.font = fontCss(t, px);
+  g.textBaseline = 'alphabetic';
+  if (hasBg) {
+    g.fillStyle = css(t.bgColor, t.bgAlpha * t.opacity);
+    const r = t.bgRound * Math.min(boxH, px * 1.2) * .5;
+    rrect(g, margin, margin, boxW, boxH, r); g.fill();
+  }
+  lines.forEach((line, i) => {
+    const lw = g.measureText(line).width;
+    const lx = margin + padX + (t.align === 0 ? 0 : t.align === 2 ? maxW - lw : (maxW - lw) / 2);
+    const base = margin + padY + asc + i * spacing;
+    if (t.glow > 0.01) {
+      g.save(); g.shadowColor = css(t.glowColor); g.shadowBlur = glowR; g.fillStyle = css(t.glowColor, t.opacity);
+      g.fillText(line, lx, base); g.fillText(line, lx, base); g.restore();
+    }
+    if (t.shadow > 0.01) {
+      g.save(); g.shadowColor = `rgba(0,0,0,${t.shadow})`; g.shadowBlur = shadowR; g.shadowOffsetX = shadowOff; g.shadowOffsetY = shadowOff;
+      g.fillStyle = css(t.color, t.opacity); g.fillText(line, lx, base); g.restore();
+    }
+    if (strokePx > .3) {
+      g.save(); g.lineJoin = 'round'; g.miterLimit = 10; g.lineWidth = strokePx * 2; g.strokeStyle = css(t.strokeColor, t.opacity);
+      g.strokeText(line, lx, base); g.restore();
+    }
+    g.fillStyle = css(t.color, t.opacity);
+    g.fillText(line, lx, base);
+  });
+  return c;
+}
+function rrect(g, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+const textCache = new Map();
+function textBitmap(t, refH) {
+  const key = styleKey(t) + '@' + Math.round(refH);
+  const c = textCache.get(t.id);
+  if (c && c.key === key) return c.cv;
+  const cv = renderText(t, refH);
+  textCache.set(t.id, { key, cv });
+  return cv;
+}
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeOutBack = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+/** Estado da animação no tempo global g (null = não aparece). Igual ao TextAnim do Android. */
+function animState(t, g) {
+  if (g < t.start || g >= t.start + t.dur) return null;
+  const o = { alpha: 1, dx: 0, dy: 0, scale: 1, rot: 0 };
+  const d = Math.min(450, Math.max(1, t.dur / 3));
+  const p = clamp((g - t.start) / d, 0, 1), e = easeOut(p);
+  switch (t.animIn) {
+    case 1: o.alpha *= p; break;
+    case 2: o.alpha *= p; o.dy += (1 - e) * .06; break;
+    case 3: o.scale *= .3 + .7 * easeOutBack(p); o.alpha *= Math.min(1, p * 2); break;
+    case 4: o.alpha *= p; o.dx -= (1 - e) * .15; break;
+    case 5: o.alpha *= p; o.dy -= (1 - e) * .06; break;
+    case 6: o.alpha *= p; o.rot -= (1 - e) * 90; o.scale *= .5 + .5 * e; break;
+  }
+  const q = clamp((t.start + t.dur - g) / d, 0, 1), eq = easeOut(q);
+  switch (t.animOut) {
+    case 1: o.alpha *= q; break;
+    case 2: o.alpha *= q; o.dy += (1 - eq) * .06; break;
+    case 3: o.scale *= .3 + .7 * eq; o.alpha *= q; break;
+    case 4: o.alpha *= q; o.dx += (1 - eq) * .15; break;
+    case 5: o.alpha *= q; o.dy -= (1 - eq) * .06; break;
+  }
+  const lt = g - t.start, TAU = Math.PI * 2;
+  switch (t.animLoop) {
+    case 1: o.scale *= 1 + .05 * Math.sin(TAU * lt / 900); break;
+    case 2: o.rot += 4 * Math.sin(TAU * lt / 1200); break;
+    case 3: o.dy += .012 * Math.sin(TAU * lt / 1500); break;
+    case 4: o.alpha *= .65 + .35 * Math.cos(TAU * lt / 1000); break;
+  }
+  return o;
+}
+/** Desenha todos os textos visíveis em g dentro do retângulo do vídeo. */
+const STATIC = { alpha: 1, dx: 0, dy: 0, scale: 1, rot: 0 };
+function drawTexts(g, rect, ms, cacheOff, staticId) {
+  for (const t of P.texts) {
+    if (!t.text.trim() && t.id !== selText) continue;
+    let s = animState(t, ms); if (!s) continue;
+    if (t.id === staticId) s = STATIC;  // editando: mostra sem animação
+    const bm = cacheOff ? renderTextCached(t, rect.h) : textBitmap(t, rect.h);
+    g.save();
+    g.globalAlpha = clamp(s.alpha, 0, 1);
+    g.translate(rect.x + (t.x + s.dx) * rect.w, rect.y + (t.y + s.dy) * rect.h);
+    g.rotate((t.rot + s.rot) * Math.PI / 180);
+    g.scale(s.scale, s.scale);
+    g.drawImage(bm, -bm.width / 2, -bm.height / 2);
+    g.restore();
+  }
+}
+const exportTextCache = new Map();
+function renderTextCached(t, h) {
+  const key = t.id + '@' + h + styleKey(t);
+  let c = exportTextCache.get(key);
+  if (!c) { c = renderText(t, h); exportTextCache.set(key, c); }
+  return c;
+}
+
+// ---------------------------------------------------------------- estado de edição
+let mode = 'cut';               // 'cut' | 'mont'
+let inMs = -1, outMs = -1, editingSceneId = null;
+let lockOn = true, loopOn = false, stopAtFilm = -1;
+let selClip = -1, selText = null;
+let ci = 0;                     // cena atual tocando na montagem
+let stopAtG = -1;
+const hasCut = () => inMs >= 0 && outMs > inMs;
+const isLocked = () => mode === 'cut' && lockOn && hasCut();
+
+// ---------------------------------------------------------------- tempo / navegação
+const filmMs = () => vid.currentTime * 1000;
+function seekFilm(ms, fast) {
+  if (!videoReady) return;
+  let t = clamp(ms, 0, P.duration);
+  if (isLocked()) t = clamp(t, inMs, outMs);
+  if (fast && vid.fastSeek) vid.fastSeek(t / 1000); else vid.currentTime = t / 1000;
+}
+function locate(g) {
+  const st = clipStarts(); const n = P.seq.length;
+  let i = 0; while (i < n - 1 && g >= st[i + 1]) i++;
+  return [i, Math.max(0, g - st[i])];
+}
+function gNow() {
+  if (!P.seq.length) return 0;
+  const st = clipStarts();
+  const sc = scene(P.seq[clamp(ci, 0, P.seq.length - 1)].scene);
+  if (!sc) return 0;
+  return st[ci] + clamp(filmMs() - sc.start, 0, sc.end - sc.start);
+}
+function seekG(g, fast) {
+  if (!videoReady || !P.seq.length) return;
+  const tot = totalMs();
+  const [i, off] = locate(clamp(g, 0, Math.max(0, tot - 1)));
+  ci = i;
+  const sc = scene(P.seq[i].scene);
+  const t = (sc.start + off) / 1000;
+  if (fast && vid.fastSeek) vid.fastSeek(t); else vid.currentTime = t;
+}
+function curTime() { return mode === 'cut' ? filmMs() : gNow(); }
+function step(ms) {
+  vid.pause(); stopAtFilm = -1; stopAtG = -1;
+  if (mode === 'cut') { seekFilm(filmMs() + ms); cutTL.follow(); }
+  else { seekG(gNow() + ms); montTL.follow(); }
+}
+function togglePlay() {
+  if (!videoReady) return;
+  if (!vid.paused) { vid.pause(); return; }
+  stopAtFilm = -1; stopAtG = -1;
+  if (mode === 'cut') {
+    const t = filmMs();
+    if (isLocked() && (t < inMs || t >= outMs - 60)) seekFilm(inMs);
+    else if (t >= P.duration - 100) seekFilm(0);
+  } else {
+    if (!P.seq.length) return;
+    if (gNow() >= totalMs() - 120) seekG(0);
+  }
+  vid.play().catch(() => {});
+}
+
+// ---------------------------------------------------------------- laço principal
+let needDraw = true;
+function dirty() { needDraw = true; }
+let lastFilm = 0;
+function loop() {
+  if (videoReady) {
+    const t = filmMs();
+    if (mode === 'cut') {
+      if (!vid.paused) {
+        if (stopAtFilm >= 0 && t >= stopAtFilm) { vid.pause(); stopAtFilm = -1; }
+        if (isLocked() && lastFilm < outMs && t >= outMs) {
+          if (loopOn) seekFilm(inMs); else { vid.pause(); seekFilm(outMs); }
+        }
+      }
+      if (!cutTL.dragging) cutTL.time = t;
+      const rel = clamp((cutTL.dragging ? cutTL.time : t) - inMs, 0, outMs - inMs);
+      $('time').textContent = `${fmt(cutTL.dragging ? cutTL.time : t)} / ${fmt(P.duration, false)}`;
+      if (isLocked()) {
+        $('badge').style.display = 'block'; $('cutProg').style.display = 'block';
+        $('badge').textContent = `✂ PRÉVIA DO CORTE  ${fmt(rel)} / ${fmt(outMs - inMs)}`;
+        $('cutProg').firstElementChild.style.width = (100 * rel / (outMs - inMs)) + '%';
+      } else { $('badge').style.display = 'none'; $('cutProg').style.display = 'none'; }
+    } else if (P.seq.length && !exporting) {
+      const sc = scene(P.seq[clamp(ci, 0, P.seq.length - 1)].scene);
+      if (!vid.paused && sc && t >= sc.end - 25) {
+        if (ci < P.seq.length - 1) { ci++; vid.currentTime = scene(P.seq[ci].scene).start / 1000; }
+        else vid.pause();
+      }
+      const g = gNow();
+      if (stopAtG >= 0 && g >= stopAtG && !vid.paused) { vid.pause(); stopAtG = -1; }
+      if (!montTL.dragging) montTL.time = g;
+      $('time').textContent = `${fmt(montTL.dragging ? montTL.time : g)} / ${fmt(totalMs(), false)}`;
+      $('badge').style.display = 'none'; $('cutProg').style.display = 'none';
+    }
+    lastFilm = t;
+    needDraw = true;
+  }
+  if (needDraw) { needDraw = false; drawOverlay(); (mode === 'cut' ? cutTL : montTL).draw(); }
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- prévia: camada de textos interativa
+const ov = $('overlay'), ovg = ov.getContext('2d');
+let contentRect = { x: 0, y: 0, w: 1, h: 1 };
+function computeContent() {
+  const W = ov.width, H = ov.height, ar = (P.w || 16) / (P.h || 9);
+  if (W / H > ar) { const w = H * ar; contentRect = { x: (W - w) / 2, y: 0, w, h: H }; }
+  else { const h = W / ar; contentRect = { x: 0, y: (H - h) / 2, w: W, h }; }
+}
+let selGeom = null; // {cx,cy,hw,hh,rot} em pixels do canvas
+let guideX = false, guideY = false;
+function drawOverlay() {
+  ovg.clearRect(0, 0, ov.width, ov.height);
+  selGeom = null;
+  if (mode !== 'mont' || !videoReady) return;
+  const g = montTL.dragging ? montTL.time : gNow();
+  drawTexts(ovg, contentRect, g, false, vid.paused ? selText : null);
+  const t = P.texts.find(x => x.id === selText);
+  if (t && animState(t, g)) {
+    const bm = textBitmap(t, contentRect.h);
+    const cx = contentRect.x + t.x * contentRect.w, cy = contentRect.y + t.y * contentRect.h;
+    const hw = bm.width / 2 + 4 * DPR, hh = bm.height / 2 + 4 * DPR;
+    selGeom = { cx, cy, hw, hh, rot: t.rot };
+    ovg.save(); ovg.translate(cx, cy); ovg.rotate(t.rot * Math.PI / 180);
+    ovg.setLineDash([6 * DPR, 4 * DPR]); ovg.strokeStyle = '#fff'; ovg.lineWidth = 1.5 * DPR;
+    ovg.strokeRect(-hw, -hh, hw * 2, hh * 2); ovg.setLineDash([]);
+    const btn = (x, y, s) => { ovg.fillStyle = '#fff'; ovg.beginPath(); ovg.arc(x, y, 11 * DPR, 0, 7); ovg.fill(); ovg.fillStyle = '#000'; ovg.font = `bold ${12 * DPR}px Arial`; ovg.textAlign = 'center'; ovg.textBaseline = 'middle'; ovg.fillText(s, x, y + DPR); };
+    btn(-hw, -hh, '✕'); btn(hw, hh, '↻');
+    ovg.restore();
+  }
+  if (guideX) { ovg.fillStyle = '#22d3ee'; ovg.fillRect(contentRect.x + contentRect.w / 2 - DPR / 2, contentRect.y, DPR, contentRect.h); }
+  if (guideY) { ovg.fillStyle = '#22d3ee'; ovg.fillRect(contentRect.x, contentRect.y + contentRect.h / 2 - DPR / 2, contentRect.w, DPR); }
+}
+function toLocal(px, py) {
+  const a = -selGeom.rot * Math.PI / 180, dx = px - selGeom.cx, dy = py - selGeom.cy;
+  return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+}
+function hitTextAt(px, py) {
+  const g = gNow();
+  for (let i = P.texts.length - 1; i >= 0; i--) {
+    const t = P.texts[i]; const s = animState(t, g); if (!s) continue;
+    const bm = textBitmap(t, contentRect.h);
+    const cx = contentRect.x + (t.x + s.dx) * contentRect.w, cy = contentRect.y + (t.y + s.dy) * contentRect.h;
+    const a = -(t.rot + s.rot) * Math.PI / 180, dx = px - cx, dy = py - cy;
+    const lx = (dx * Math.cos(a) - dy * Math.sin(a)) / s.scale, ly = (dx * Math.sin(a) + dy * Math.cos(a)) / s.scale;
+    if (Math.abs(lx) <= bm.width / 2 + 8 * DPR && Math.abs(ly) <= bm.height / 2 + 8 * DPR) return t;
+  }
+  return null;
+}
+let ovDrag = null;
+ov.addEventListener('pointerdown', e => {
+  if (mode !== 'mont') { togglePlay(); return; }
+  const r = ov.getBoundingClientRect(); const px = (e.clientX - r.left) * DPR, py = (e.clientY - r.top) * DPR;
+  const t = P.texts.find(x => x.id === selText);
+  if (t && selGeom) {
+    const [lx, ly] = toLocal(px, py), R = 16 * DPR;
+    if (Math.hypot(lx + selGeom.hw, ly + selGeom.hh) <= R) { deleteText(t.id); return; }
+    if (Math.hypot(lx - selGeom.hw, ly - selGeom.hh) <= R) {
+      ovDrag = { kind: 'rot', t, s0: t.scale, r0: t.rot, d0: Math.max(1, Math.hypot(px - selGeom.cx, py - selGeom.cy)), a0: Math.atan2(py - selGeom.cy, px - selGeom.cx) * 180 / Math.PI, cx: selGeom.cx, cy: selGeom.cy };
+      ov.setPointerCapture(e.pointerId); return;
+    }
+  }
+  const hit = hitTextAt(px, py);
+  if (hit) {
+    vid.pause();
+    selectText(hit.id);
+    ovDrag = { kind: 'move', t: hit, x0: hit.x, y0: hit.y, px, py, moved: false };
+    ov.setPointerCapture(e.pointerId);
+  } else if (selText) { selectText(null); }
+  else togglePlay();
+});
+ov.addEventListener('pointermove', e => {
+  if (!ovDrag) return;
+  const r = ov.getBoundingClientRect(); const px = (e.clientX - r.left) * DPR, py = (e.clientY - r.top) * DPR;
+  const t = ovDrag.t;
+  if (ovDrag.kind === 'move') {
+    let nx = ovDrag.x0 + (px - ovDrag.px) / contentRect.w, ny = ovDrag.y0 + (py - ovDrag.py) / contentRect.h;
+    if (Math.abs(px - ovDrag.px) + Math.abs(py - ovDrag.py) > 3) ovDrag.moved = true;
+    guideX = Math.abs(nx - .5) < .015; guideY = Math.abs(ny - .5) < .015;
+    if (guideX) nx = .5; if (guideY) ny = .5;
+    t.x = clamp(nx, -.2, 1.2); t.y = clamp(ny, -.2, 1.2);
+  } else {
+    const d = Math.hypot(px - ovDrag.cx, py - ovDrag.cy), a = Math.atan2(py - ovDrag.cy, px - ovDrag.cx) * 180 / Math.PI;
+    t.scale = clamp(ovDrag.s0 * d / ovDrag.d0, .2, 6);
+    t.rot = snapRot(ovDrag.r0 + a - ovDrag.a0);
+    syncTextEditorValues();
+  }
+  dirty();
+});
+ov.addEventListener('pointerup', () => { if (ovDrag) { guideX = guideY = false; ovDrag = null; commit(); dirty(); } });
+ov.addEventListener('dblclick', e => {
+  if (mode !== 'mont') return;
+  const r = ov.getBoundingClientRect();
+  const hit = hitTextAt((e.clientX - r.left) * DPR, (e.clientY - r.top) * DPR);
+  if (hit) { selectText(hit.id); const ta = document.querySelector('#textEditor textarea'); if (ta) { ta.focus(); ta.select(); } }
+});
+function snapRot(r) {
+  let a = ((r % 360) + 360) % 360;
+  for (const s of [0, 90, 180, 270, 360]) if (Math.abs(a - s) < 4) a = s;
+  return a > 180 ? a - 360 : a;
+}
+
+// ---------------------------------------------------------------- linha do tempo do CORTE
+const TILE_STEPS = [100, 250, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 1200000];
+const LABEL_STEPS = [200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000];
+const cutTL = (() => {
+  const cv = $('tl'), g = cv.getContext('2d');
+  const o = { time: 0, z: 0, dragging: false };
+  const D = DPR;
+  const ovTop = 4 * D, ovH = 12 * D, rulerB = ovTop + ovH + 18 * D, stripT = rulerB + 4 * D, stripH = 64 * D, stripB = stripT + stripH, sceneT = stripB + 7 * D, tileW = 64 * D, HW = 12 * D;
+  const W = () => cv.width;
+  const x = ms => W() / 2 + (ms - o.time) * o.z;
+  const msAt = px => o.time + (px - W() / 2) / o.z;
+  const minZ = () => P.duration > 0 ? W() * .92 / P.duration : 1e-4;
+  const maxZ = () => W() / 400;
+  o.clampZ = () => { if (!W()) return; if (o.z <= 0) o.z = W() / 60000; const lo = minZ(); o.z = clamp(o.z, lo, Math.max(lo, maxZ())); $('zoomLbl').textContent = 'Tela = ' + zoomLabel(W() / o.z); };
+  o.fit = () => { o.z = minZ(); o.clampZ(); dirty(); };
+  o.zoom = (f) => { o.z *= f; o.clampZ(); dirty(); };
+  o.zoomTo = ms => { o.z = W() / ms; o.clampZ(); dirty(); };
+  o.focusSel = () => { if (hasCut()) { o.z = W() * .46 / (outMs - inMs); o.clampZ(); } };
+  o.follow = () => { o.time = filmMs(); dirty(); };
+  const lockClamp = ms => isLocked() ? clamp(ms, inMs, outMs) : clamp(ms, 0, P.duration);
+
+  o.draw = () => {
+    const w = W(), h = cv.height;
+    g.clearRect(0, 0, w, h);
+    if (!P.duration || !o.z) return;
+    const vs = Math.max(0, msAt(0)), ve = Math.min(P.duration, msAt(w) + 1);
+    // mini-mapa
+    const pd = 8 * D, bw = w - 2 * pd, ox = ms => pd + bw * ms / P.duration;
+    g.fillStyle = '#26262c'; rrect(g, pd, ovTop, bw, ovH, ovH / 2); g.fill();
+    for (const s of P.scenes) { g.fillStyle = css(s.color); g.fillRect(ox(s.start), ovTop + ovH * .3, Math.max(2 * D, ox(s.end) - ox(s.start)), ovH * .4); }
+    if (hasCut()) { g.fillStyle = 'rgba(34,211,238,.5)'; g.fillRect(ox(inMs), ovTop, Math.max(2 * D, ox(outMs) - ox(inMs)), ovH); }
+    g.strokeStyle = '#fff'; g.lineWidth = 1.5 * D; rrect(g, ox(vs), ovTop, Math.max(6 * D, ox(ve) - ox(vs)), ovH, 3 * D); g.stroke();
+    g.fillStyle = '#22d3ee'; g.fillRect(ox(o.time) - D, ovTop - D, 2 * D, ovH + 2 * D);
+    // régua
+    const ls = LABEL_STEPS.find(s => s * o.z >= 76 * D) || LABEL_STEPS[LABEL_STEPS.length - 1];
+    g.fillStyle = '#9a9aa5'; g.font = `${10 * D}px Arial`; g.textBaseline = 'alphabetic';
+    for (let t = Math.floor(vs / ls) * ls; t <= ve; t += ls) {
+      const xx = x(t); g.fillRect(xx, rulerB - 5 * D, D, 5 * D); g.fillText(fmt(t, ls < 1000), xx + 3 * D, rulerB - 6 * D);
+    }
+    // miniaturas
+    const step = TILE_STEPS.find(s => s >= tileW / o.z) || TILE_STEPS[TILE_STEPS.length - 1];
+    for (let t = Math.floor(vs / step) * step; t < ve; t += step) {
+      const l = x(t), r = x(Math.min(t + step, P.duration));
+      const im = getThumb(t);
+      if (im) drawCrop(g, im, l, stripT, r - l, stripH); else { g.fillStyle = '#1c1c20'; g.fillRect(l, stripT, r - l, stripH); }
+    }
+    g.fillStyle = '#fff'; g.fillRect(x(0) - 2 * D, stripT, 2 * D, stripH); g.fillRect(x(P.duration), stripT, 2 * D, stripH);
+    // cenas salvas
+    for (const s of P.scenes) { const l = x(s.start), r = x(s.end); if (r < 0 || l > w) continue; g.fillStyle = css(s.color); rrect(g, l + D, sceneT, r - l - 2 * D, 6 * D, 3 * D); g.fill(); }
+    // seleção
+    if (inMs >= 0) {
+      const xi = x(inMs);
+      if (outMs > inMs) {
+        const xo = x(outMs);
+        g.fillStyle = lockOn ? 'rgba(0,0,0,.8)' : 'rgba(0,0,0,.55)';
+        g.fillRect(0, stripT, xi, stripH); g.fillRect(xo, stripT, w - xo, stripH);
+        g.fillStyle = 'rgba(34,211,238,.2)'; g.fillRect(xi, stripT, xo - xi, stripH);
+        g.fillStyle = '#fff'; g.fillRect(xi, stripT - 2 * D, xo - xi, 2 * D); g.fillRect(xi, stripB, xo - xi, 2 * D);
+        handle(xi - HW, xi); handle(xo, xo + HW);
+      } else { g.fillStyle = '#22d3ee'; g.fillRect(xi - 1.5 * D, stripT - 3 * D, 3 * D, stripH + 6 * D); g.fillRect(xi, stripT - 3 * D, 10 * D, 8 * D); }
+    }
+    // cursor
+    g.fillStyle = '#fff'; g.fillRect(w / 2 - D, rulerB - 14 * D, 2 * D, h); g.beginPath(); g.arc(w / 2, rulerB - 14 * D, 4 * D, 0, 7); g.fill();
+  };
+  function handle(l, r) {
+    g.fillStyle = '#fff'; rrect(g, l, stripT - 2 * D, r - l, stripH + 4 * D, 4 * D); g.fill();
+    g.fillStyle = '#000'; g.fillRect((l + r) / 2 - D, stripT + stripH * .35, 2 * D, stripH * .3);
+  }
+  let drag = null;
+  cv.addEventListener('pointerdown', e => {
+    if (!P.duration) return;
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * D, py = (e.clientY - r.top) * D;
+    cv.setPointerCapture(e.pointerId); vid.pause(); stopAtFilm = -1;
+    o.dragging = true;
+    if (py <= ovTop + ovH + 6 * D) { drag = { kind: 'ov' }; o.time = lockClamp(ovMs(px)); seekFilm(o.time, true); dirty(); return; }
+    if (hasCut() && py >= stripT - 12 * D && py <= stripB + 12 * D) {
+      const xi = x(inMs) - HW / 2, xo = x(outMs) + HW / 2, di = Math.abs(px - xi), dout = Math.abs(px - xo), zone = 16 * D;
+      if (di <= zone && di <= dout) { drag = { kind: 'in', off: px - x(inMs) }; return; }
+      if (dout <= zone) { drag = { kind: 'out', off: px - x(outMs) }; return; }
+    }
+    drag = { kind: 'scroll', x0: px, t0: o.time };
+  });
+  const ovMs = px => { const pd = 8 * D; return P.duration * clamp((px - pd) / (W() - 2 * pd), 0, 1); };
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * D, py = (e.clientY - r.top) * D;
+    if (!drag) {
+      let cur = 'grab';
+      if (hasCut() && py >= stripT - 12 * D && py <= stripB + 12 * D && (Math.abs(px - x(inMs)) < 16 * D || Math.abs(px - x(outMs)) < 16 * D)) cur = 'ew-resize';
+      if (py <= ovTop + ovH + 6 * D) cur = 'pointer';
+      cv.style.cursor = cur; return;
+    }
+    if (drag.kind === 'scroll') { o.time = lockClamp(drag.t0 - (px - drag.x0) / o.z); seekFilm(o.time, true); }
+    else if (drag.kind === 'ov') { o.time = lockClamp(ovMs(px)); seekFilm(o.time, true); }
+    else if (drag.kind === 'in') { inMs = clamp(msAt(px - drag.off), 0, Math.max(0, outMs - 200)); vid.currentTime = inMs / 1000; updateSel(); }
+    else if (drag.kind === 'out') { outMs = clamp(msAt(px - drag.off), Math.min(P.duration, inMs + 200), P.duration); vid.currentTime = outMs / 1000; updateSel(); }
+    dirty();
+  });
+  const end = () => { if (!drag) return; drag = null; o.time = lockClamp(o.time); o.dragging = false; seekFilm(o.time); dirty(); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault(); if (!P.duration) return;
+    if (e.ctrlKey || e.metaKey) o.zoom(Math.exp(-e.deltaY * .0025));
+    else { vid.pause(); o.time = lockClamp(o.time + (e.deltaY + e.deltaX) / o.z * .8); seekFilm(o.time, true); dirty(); }
+  }, { passive: false });
+  return o;
+})();
+function zoomLabel(ms) { return ms < 10000 ? (ms / 1000).toFixed(1).replace('.', ',') + 's' : ms < 120000 ? Math.round(ms / 1000) + 's' : ms < 7200000 ? Math.round(ms / 60000) + ' min' : (ms / 3600000).toFixed(1).replace('.', ',') + ' h'; }
+
+// ---------------------------------------------------------------- linha do tempo da MONTAGEM
+const montTL = (() => {
+  const cv = $('mtl'), g = cv.getContext('2d');
+  const o = { time: 0, z: 0, dragging: false };
+  const D = DPR;
+  const rulerB = 16 * D, vT = 22 * D, vH = 58 * D, vB = vT + vH, tT = vB + 10 * D, laneH = 26 * D, laneGap = 4 * D, tileW = 60 * D, EW = 11 * D;
+  let st = [0], lanes = new Map();
+  const W = () => cv.width;
+  const x = ms => W() / 2 + (ms - o.time) * o.z;
+  const msAt = px => o.time + (px - W() / 2) / o.z;
+  const tot = () => st[st.length - 1];
+  o.clampZ = () => { if (!W()) return; if (o.z <= 0) o.z = W() / 30000; const lo = W() * .45 / Math.max(tot(), 1000); o.z = clamp(o.z, lo, Math.max(lo, W() / 1200)); };
+  o.zoom = f => { o.z *= f; o.clampZ(); dirty(); };
+  o.follow = () => { o.time = gNow(); dirty(); };
+  o.refresh = () => { st = clipStarts(); o.clampZ(); o.time = clamp(o.time, 0, Math.max(0, tot())); dirty(); };
+  function computeLanes() {
+    lanes.clear(); const ends = [];
+    for (const t of P.texts.slice().sort((a, b) => a.start - b.start)) {
+      let l = ends.findIndex(e => e <= t.start);
+      if (l < 0) { ends.push(t.start + t.dur); l = ends.length - 1; } else ends[l] = t.start + t.dur;
+      lanes.set(t.id, l);
+    }
+  }
+  const textRect = t => { const l = lanes.get(t.id) || 0, top = tT + l * (laneH + laneGap); return { l: x(t.start), r: x(t.start + t.dur), t: top, b: top + laneH }; };
+
+  o.draw = () => {
+    const w = W(), h = cv.height;
+    g.clearRect(0, 0, w, h);
+    st = clipStarts(); computeLanes();
+    if (!o.z) o.clampZ();
+    const vs = Math.max(0, msAt(0)), ve = msAt(w) + 1;
+    const ls = LABEL_STEPS.find(s => s * o.z >= 70 * D) || LABEL_STEPS[LABEL_STEPS.length - 1];
+    g.fillStyle = '#9a9aa5'; g.font = `${10 * D}px Arial`;
+    for (let t = Math.floor(vs / ls) * ls; t <= ve; t += ls) { const xx = x(t); g.fillRect(xx, rulerB - 5 * D, D, 5 * D); g.fillText(fmt(t, ls < 1000), xx + 3 * D, rulerB - 4 * D); }
+    if (!P.seq.length) {
+      g.fillStyle = '#9a9aa5'; g.font = `${13 * D}px Arial`; g.textAlign = 'center';
+      g.fillText('Montagem vazia — use "＋ Cenas" ou o botão "→ Montagem" nas cenas', w / 2, vT + vH / 2); g.textAlign = 'left';
+    }
+    const step = TILE_STEPS.find(s => s >= tileW / o.z) || TILE_STEPS[TILE_STEPS.length - 1];
+    P.seq.forEach((item, i) => {
+      if (drag && drag.kind === 'reorder' && drag.active && i === drag.from) return;
+      const l = x(st[i]), r = x(st[i + 1]); if (r < 0 || l > w) return;
+      const sc = scene(item.scene); if (!sc) return;
+      g.save(); g.beginPath(); g.rect(l + D, vT, r - l - 2 * D, vH); g.clip();
+      let t = st[i] + Math.floor(Math.max(0, msAt(Math.max(l, 0)) - st[i]) / step) * step;
+      for (; x(t) < Math.min(r, w); t += step) {
+        const src = sc.start + (t - st[i]);
+        const im = getThumb(Math.floor(src / step) * step);
+        if (im) drawCrop(g, im, x(t), vT, x(t + step) - x(t), vH); else { g.fillStyle = '#1c1c20'; g.fillRect(x(t), vT, x(t + step) - x(t), vH); }
+      }
+      const label = `${sc.name}  ${fdur(sc.end - sc.start)}`;
+      g.font = `bold ${10.5 * D}px Arial`; const tw = g.measureText(label).width;
+      const lx = Math.min(Math.max(l + 4 * D, 4 * D), r - tw - 10 * D);
+      g.fillStyle = 'rgba(0,0,0,.6)'; rrect(g, lx - 3 * D, vT + 3 * D, tw + 7 * D, 15 * D, 4 * D); g.fill();
+      g.fillStyle = '#fff'; g.fillText(label, lx, vT + 14 * D);
+      g.fillStyle = css(sc.color); g.fillRect(l + D, vB - 3 * D, r - l - 2 * D, 3 * D);
+      g.restore();
+      g.fillStyle = '#000'; g.fillRect(r - D, vT, 2 * D, vH);
+      if (i === selClip) { g.strokeStyle = '#fff'; g.lineWidth = 2.5 * D; rrect(g, l + D, vT, r - l - 2 * D, vH, 6 * D); g.stroke(); }
+    });
+    const ex = x(tot()); if (ex < w) { g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(ex, vT, w - ex, vH); }
+    // textos
+    for (const t of P.texts) {
+      const rc = textRect(t); if (rc.r < 0 || rc.l > w) continue;
+      const sel = t.id === selText;
+      g.fillStyle = sel ? '#8b5cf6' : '#6d28d9'; rrect(g, rc.l, rc.t, rc.r - rc.l, laneH, 6 * D); g.fill();
+      g.save(); g.beginPath(); g.rect(rc.l + 4 * D, rc.t, rc.r - rc.l - 8 * D, laneH); g.clip();
+      g.fillStyle = '#fff'; g.font = `${11 * D}px Arial`; g.fillText('T  ' + (t.text || '(vazio)').replace(/\n/g, ' '), Math.max(rc.l, 0) + (sel ? EW : 0) + 6 * D, rc.t + laneH / 2 + 4 * D);
+      g.restore();
+      if (sel) {
+        g.strokeStyle = '#fff'; g.lineWidth = 2.5 * D; rrect(g, rc.l, rc.t, rc.r - rc.l, laneH, 6 * D); g.stroke();
+        for (const [a, b] of [[rc.l, rc.l + EW], [rc.r - EW, rc.r]]) { g.fillStyle = '#fff'; rrect(g, a, rc.t, b - a, laneH, 4 * D); g.fill(); g.fillStyle = '#6d28d9'; g.fillRect((a + b) / 2 - D, rc.t + laneH * .3, 2 * D, laneH * .4); }
+      }
+    }
+    if (snapLine >= 0) { g.fillStyle = '#facc15'; g.fillRect(x(snapLine) - .75 * D, vT - 4 * D, 1.5 * D, h); }
+    if (drag && drag.kind === 'reorder' && drag.active) {
+      const tg = reorderTarget(drag.px), ix = x(st[clamp(tg, 0, P.seq.length)]);
+      g.fillStyle = '#22d3ee'; g.fillRect(ix - 1.5 * D, vT - 4 * D, 3 * D, vH + 8 * D);
+      const sc = scene(P.seq[drag.from].scene), s = vH * 1.1;
+      g.globalAlpha = .9; const im = sc && getThumb(sc.start);
+      if (im) drawCrop(g, im, drag.px - s / 2, vT - 6 * D, s, s); else { g.fillStyle = '#333'; g.fillRect(drag.px - s / 2, vT - 6 * D, s, s); }
+      g.globalAlpha = 1; g.strokeStyle = '#fff'; g.lineWidth = 2 * D; g.strokeRect(drag.px - s / 2, vT - 6 * D, s, s);
+    }
+    g.fillStyle = '#fff'; g.fillRect(w / 2 - D, 0, 2 * D, h); g.beginPath(); g.arc(w / 2, 3 * D, 4 * D, 0, 7); g.fill();
+  };
+  let drag = null, snapLine = -1;
+  function clipAt(px, py) { if (py < vT || py > vB) return -1; const t = msAt(px); for (let i = 0; i < P.seq.length; i++) if (t >= st[i] && t < st[i + 1]) return i; return -1; }
+  function textAt(px, py) {
+    computeLanes();
+    const list = P.texts.slice().sort((a, b) => (a.id === selText ? 0 : 1) - (b.id === selText ? 0 : 1));
+    for (const t of list) { const rc = textRect(t); if (px >= rc.l - 2 * D && px <= rc.r + 2 * D && py >= rc.t - 4 * D && py <= rc.b + 4 * D) return t; }
+    return null;
+  }
+  function reorderTarget(px) { const t = msAt(px); if (t <= 0) return 0; for (let i = 0; i < P.seq.length; i++) if (t < (st[i] + st[i + 1]) / 2) return i; return P.seq.length; }
+  function snap(v, self) {
+    const th = 9 * D / o.z; let best = v, bd = th + 1;
+    const test = c => { const d = Math.abs(c - v); if (d < bd) { bd = d; best = c; } };
+    test(o.time); st.forEach(test); P.texts.forEach(t => { if (t !== self) { test(t.start); test(t.start + t.dur); } });
+    snapLine = bd <= th ? best : -1;
+    return bd <= th ? best : v;
+  }
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * D, py = (e.clientY - r.top) * D;
+    cv.setPointerCapture(e.pointerId);
+    st = clipStarts();
+    const sel = P.texts.find(t => t.id === selText);
+    if (sel) {
+      computeLanes(); const rc = textRect(sel);
+      if (py >= rc.t - 6 * D && py <= rc.b + 6 * D) {
+        let k = null;
+        if (Math.abs(px - rc.l) <= EW + 4 * D) k = 'tstart'; else if (Math.abs(px - rc.r) <= EW + 4 * D) k = 'tend'; else if (px > rc.l && px < rc.r) k = 'tmove';
+        if (k) { drag = { kind: k, t: sel, s0: sel.start, e0: sel.start + sel.dur, grab: msAt(px) - sel.start, px0: px, moved: false }; o.dragging = true; return; }
+      }
+    }
+    const tx = textAt(px, py);
+    if (tx) { selectText(tx.id); drag = { kind: 'tmove', t: tx, s0: tx.start, e0: tx.start + tx.dur, grab: msAt(px) - tx.start, px0: px, moved: false }; o.dragging = true; return; }
+    const c = clipAt(px, py);
+    if (c >= 0) { drag = { kind: 'reorder', from: c, px0: px, px, active: false }; return; }
+    drag = { kind: 'scroll', x0: px, t0: o.time, moved: false };
+  });
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * D, py = (e.clientY - r.top) * D;
+    if (!drag) {
+      const sel = P.texts.find(t => t.id === selText); let cur = 'grab';
+      if (sel) { computeLanes(); const rc = textRect(sel); if (py >= rc.t && py <= rc.b && (Math.abs(px - rc.l) < EW + 4 * D || Math.abs(px - rc.r) < EW + 4 * D)) cur = 'ew-resize'; }
+      if (clipAt(px, py) >= 0) cur = 'move';
+      cv.style.cursor = cur; return;
+    }
+    if (drag.kind === 'scroll') {
+      if (Math.abs(px - drag.x0) > 4) { drag.moved = true; o.dragging = true; vid.pause(); }
+      if (!drag.moved) return;
+      o.time = clamp(drag.t0 - (px - drag.x0) / o.z, 0, Math.max(0, tot())); seekG(o.time, true);
+    } else if (drag.kind === 'reorder') {
+      if (!drag.active && Math.abs(px - drag.px0) > 6 * D) { drag.active = true; o.dragging = true; }
+      drag.px = px;
+    } else {
+      const t = drag.t; if (Math.abs(px - drag.px0) > 3) drag.moved = true; if (!drag.moved) return;
+      const m = msAt(px);
+      if (drag.kind === 'tmove') {
+        const len = drag.e0 - drag.s0; let s = m - drag.grab; const s1 = snap(s, t);
+        if (s1 !== s) s = s1; else { const e1 = snap(s + len, t); if (e1 !== s + len) s = e1 - len; }
+        t.start = Math.max(0, Math.round(s)); t.dur = len;
+      } else if (drag.kind === 'tstart') { const s = clamp(snap(m, t), 0, drag.e0 - 300); t.start = Math.round(s); t.dur = Math.round(drag.e0 - s); }
+      else { const en = Math.max(snap(m, t), t.start + 300); t.dur = Math.round(en - t.start); }
+    }
+    dirty();
+  });
+  const end = e => {
+    if (!drag) return;
+    const d = drag; drag = null; snapLine = -1; o.dragging = false;
+    const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * D, py = (e.clientY - r.top) * D;
+    if (d.kind === 'scroll') { if (d.moved) seekG(o.time); else { selClip = -1; selectText(null); refreshMontTools(); } }
+    else if (d.kind === 'reorder') {
+      if (d.active) {
+        let to = reorderTarget(d.px); if (to > d.from) to--;
+        if (to !== d.from) { const it = P.seq.splice(d.from, 1)[0]; P.seq.splice(to, 0, it); selClip = to; commit(); o.refresh(); seekG(clipStarts()[to]); toast(`Cena movida para a posição ${to + 1}`); }
+      } else { selClip = clipAt(px, py); selectText(null); refreshMontTools(); }
+    } else if (d.moved) commit();
+    dirty();
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) o.zoom(Math.exp(-e.deltaY * .0025));
+    else { vid.pause(); o.time = clamp(o.time + (e.deltaY + e.deltaX) / o.z * .8, 0, Math.max(0, tot())); seekG(o.time, true); dirty(); }
+  }, { passive: false });
+  return o;
+})();
+
+// ---------------------------------------------------------------- modo
+function setMode(m) {
+  if (m === mode) return;
+  vid.pause(); stopAtFilm = -1; stopAtG = -1;
+  mode = m;
+  $('mCut').classList.toggle('on', m === 'cut'); $('mMont').classList.toggle('on', m === 'mont');
+  $('cutFooter').style.display = m === 'cut' ? '' : 'none';
+  $('montFooter').style.display = m === 'mont' ? '' : 'none';
+  resizeAll();
+  if (m === 'cut') { seekFilm(P.last || 0); cutTL.time = P.last || 0; }
+  else { P.last = filmMs(); montTL.refresh(); seekG(montTL.time); refreshMontTools(); }
+  dirty();
+}
+
+// ---------------------------------------------------------------- CORTE: marcar / salvar cenas
+function updateSel() {
+  const l = $('selLbl');
+  if (inMs < 0) l.textContent = 'Marque o Início (I) e o Fim (O)';
+  else if (outMs <= inMs) l.textContent = `Início ${fmt(inMs)} • agora o Fim (O)`;
+  else l.textContent = `${fmt(inMs)} → ${fmt(outMs)}  (${fdur(outMs - inMs)})` + (lockOn ? ' • ▶ toca só o corte' : '');
+  $('bSave').disabled = !hasCut();
+  $('bSave').textContent = editingSceneId ? '✓ Atualizar cena' : '✂ Salvar cena';
+  $('bCancelEdit').style.display = editingSceneId ? '' : 'none';
+  $('bLock').textContent = lockOn ? '🔒 Travado' : '🔓 Livre';
+  $('bLock').classList.toggle('on', lockOn);
+  $('bLoop').classList.toggle('on', loopOn);
+  dirty();
+}
+function markIn() { if (!videoReady) return; inMs = Math.round(filmMs()); if (outMs >= 0 && outMs - inMs < 200) outMs = -1; updateSel(); }
+function markOut() {
+  if (!videoReady) return;
+  const t = Math.round(filmMs());
+  if (inMs < 0) return toast('Marque o Início primeiro (I)');
+  if (t - inMs < 200) return toast('O Fim precisa ficar depois do Início');
+  outMs = t; vid.pause(); updateSel();
+  if (lockOn) { seekFilm(inMs); cutTL.focusSel(); cutTL.time = inMs; }
+}
+function saveScene() {
+  if (!hasCut()) return;
+  vid.pause();
+  const ed = editingSceneId && scene(editingSceneId);
+  if (ed) {
+    ed.start = inMs; ed.end = outMs; editingSceneId = null; inMs = outMs = -1;
+    commit(); updateSel(); toast(`Cena "${ed.name}" atualizada`); return;
+  }
+  const def = `Cena ${P.scenes.length + 1}`;
+  const name = prompt('Nome da cena:', def);
+  if (name === null) return;
+  const color = P.scenes.length ? P.scenes[P.scenes.length - 1].color : SCENE_COLORS[0];
+  P.scenes.push({ id: newId(), name: name.trim() || def, start: inMs, end: outMs, color });
+  inMs = outMs; outMs = -1;
+  commit(); updateSel(); toast('Cena salva');
+}
+function editScene(s) {
+  setMode('cut');
+  editingSceneId = s.id; inMs = s.start; outMs = s.end;
+  updateSel(); seekFilm(s.start); cutTL.focusSel(); cutTL.time = s.start;
+  toast('Ajuste as bordas e clique em Atualizar cena');
+}
+
+// ---------------------------------------------------------------- lista de cenas
+function refreshScenes() {
+  const box = $('sceneList'); box.innerHTML = '';
+  const list = sortedScenes();
+  $('scenesInfo').textContent = list.length ? `${list.length} cenas • ${fmt(list.reduce((a, s) => a + s.end - s.start, 0), false)}` : 'Sem cenas — corte na aba ✂ Cortar';
+  list.forEach((s, i) => {
+    const used = P.seq.some(q => q.scene === s.id);
+    const el = document.createElement('div'); el.className = 'scene';
+    el.innerHTML = `<div class="bar" style="background:${css(s.color)}"></div><canvas width="176" height="100" data-ms="${s.start + Math.min(400, (s.end - s.start) / 2)}"></canvas>
+      <div class="info"><div class="nm"></div><div class="tm">${fmt(s.start)} → ${fmt(s.end)} • ${fdur(s.end - s.start)}${used ? ' • na montagem' : ''}</div></div>
+      <div class="act"><button data-a="add" title="Colocar na montagem">→ Mont.</button><button data-a="more" title="Renomear, cor, ajustar, apagar">⋯</button></div>`;
+    el.querySelector('.nm').textContent = `${i + 1}. ${s.name}`;
+    el.onclick = ev => {
+      const a = ev.target.dataset && ev.target.dataset.a;
+      if (a === 'add') { addToSeq([s]); return; }
+      if (a === 'more') { sceneMenu(s); return; }
+      if (mode === 'cut') { vid.pause(); seekFilm(s.start); cutTL.time = s.start; stopAtFilm = s.end; vid.play().catch(() => {}); }
+      else { const idx = P.seq.findIndex(q => q.scene === s.id); if (idx >= 0) { selClip = idx; seekG(clipStarts()[idx]); montTL.follow(); refreshMontTools(); } }
+    };
+    box.appendChild(el);
+  });
+  refreshSceneThumbs();
+}
+function refreshSceneThumbs() {
+  document.querySelectorAll('#sceneList canvas').forEach(c => {
+    const im = getThumb(+c.dataset.ms);
+    if (im) { const g = c.getContext('2d'); drawCrop(g, im, 0, 0, c.width, c.height); }
+  });
+}
+function sceneMenu(s) {
+  const op = prompt(`"${s.name}" — digite:\n1 = Renomear\n2 = Mudar cor\n3 = Ajustar corte\n4 = Duplicar\n5 = Apagar`, '1');
+  if (op === '1') { const n = prompt('Novo nome:', s.name); if (n && n.trim()) { s.name = n.trim(); commit(); } }
+  else if (op === '2') { s.color = SCENE_COLORS[(SCENE_COLORS.indexOf(s.color) + 1) % SCENE_COLORS.length]; commit(); }
+  else if (op === '3') editScene(s);
+  else if (op === '4') { P.scenes.push(Object.assign({}, s, { id: newId(), name: s.name + ' (cópia)' })); commit(); }
+  else if (op === '5') { if (confirm(`Apagar "${s.name}"? Ela também sai da montagem.`)) { P.scenes = P.scenes.filter(x => x !== s); P.seq = P.seq.filter(q => q.scene !== s.id); selClip = -1; commit(); montTL.refresh(); } }
+}
+function addToSeq(list) {
+  const at = mode === 'mont' && selClip >= 0 && selClip < P.seq.length ? selClip + 1 : P.seq.length;
+  list.forEach((s, k) => P.seq.splice(at + k, 0, { uid: newId(), scene: s.id, text: '', pos: 2, size: 1, color: -1, bg: true, secs: 3 }));
+  if (mode === 'mont') selClip = at + list.length - 1;
+  commit(); montTL.refresh();
+  toast(list.length === 1 ? `"${list[0].name}" foi para a montagem` : `${list.length} cenas foram para a montagem`);
+}
+
+// ---------------------------------------------------------------- MONTAGEM: ferramentas
+function tbtn(label, title, fn, cls) { const b = document.createElement('button'); b.textContent = label; if (title) b.title = title; if (cls) b.className = cls; b.onclick = fn; return b; }
+function refreshMontTools() {
+  const box = $('montTools'); if (!box) return; box.innerHTML = '';
+  const add = (...a) => box.appendChild(tbtn(...a));
+  add('＋ Cenas', 'Escolher cenas na lista à direita', () => { showSide('scenes'); toast('Clique em "→ Mont." na cena desejada'); }, 'accent');
+  add('T Texto', 'Novo texto no cursor (T)', addText, 'accent');
+  add('☰ Títulos auto', 'Um título no começo de cada cena', autoTitles);
+  if (selClip >= 0 && selClip < P.seq.length) {
+    const i = selClip;
+    const span = document.createElement('span'); span.className = 'lbl'; span.textContent = `Cena ${i + 1}:`; box.appendChild(span);
+    add('▶ Tocar', '', () => { const s = clipStarts(); seekG(s[i]); stopAtG = s[i + 1]; vid.play().catch(() => {}); });
+    add('◀', 'Mover para trás', () => moveClip(i, i - 1));
+    add('▶', 'Mover para frente', () => moveClip(i, i + 1));
+    add('⧉', 'Duplicar', () => { P.seq.splice(i + 1, 0, Object.assign({}, P.seq[i], { uid: newId() })); selClip = i + 1; commit(); montTL.refresh(); });
+    add('🗑', 'Tirar da montagem (Del)', () => deleteClip(i));
+  }
+  const sp = document.createElement('div'); sp.className = 'sp'; box.appendChild(sp);
+  const info = document.createElement('span'); info.className = 'muted'; info.textContent = `${P.seq.length} cenas • ${fmt(totalMs(), false)}`; box.appendChild(info);
+  add('−', 'Zoom −', () => montTL.zoom(1 / 2.2)); add('+', 'Zoom +', () => montTL.zoom(2.2));
+}
+function moveClip(i, j) {
+  if (j < 0 || j >= P.seq.length) return;
+  const it = P.seq.splice(i, 1)[0]; P.seq.splice(j, 0, it); selClip = j; commit(); montTL.refresh(); seekG(clipStarts()[j]);
+}
+function deleteClip(i) { P.seq.splice(i, 1); selClip = -1; commit(); montTL.refresh(); seekG(Math.min(montTL.time, Math.max(0, totalMs() - 1))); }
+function addText() {
+  if (!P.seq.length) return toast('Coloque cenas na montagem primeiro');
+  if (mode !== 'mont') setMode('mont');
+  vid.pause();
+  const tot = totalMs(), g = clamp(Math.round(gNow()), 0, Math.max(0, tot - 300));
+  const t = newText('Texto', g, Math.max(300, Math.min(3000, tot - g)));
+  t.y = .5; PRESETS[0][1](t); t.animIn = 1; t.animOut = 1;
+  P.texts.push(t); commit();
+  selectText(t.id);
+  setTimeout(() => { const ta = document.querySelector('#textEditor textarea'); if (ta) { ta.focus(); ta.select(); } }, 30);
+}
+function deleteText(id) { P.texts = P.texts.filter(t => t.id !== id); textCache.delete(id); if (selText === id) selectText(null); commit(); dirty(); }
+function autoTitles() {
+  if (!P.seq.length) return toast('A montagem está vazia');
+  const op = prompt('Título no começo de cada cena:\n1 = "Cena 1 – Nome"\n2 = Só o nome\n3 = Só "Cena 1"', '1');
+  if (!op || !'123'.includes(op)) return;
+  const s = clipStarts();
+  P.seq.forEach((q, i) => {
+    const nm = (scene(q.scene) || {}).name || '';
+    const txt = op === '1' ? `Cena ${i + 1} – ${nm}` : op === '2' ? nm : `Cena ${i + 1}`;
+    const t = newText(txt, s[i], Math.max(300, Math.min(3000, s[i + 1] - s[i])));
+    t.y = .86; PRESETS[7][1](t); t.animIn = 2; t.animOut = 1;
+    P.texts.push(t);
+  });
+  commit(); toast(`${P.seq.length} títulos criados`);
+}
+
+// ---------------------------------------------------------------- painel de TEXTO (estilo CapCut)
+function showSide(which) {
+  $('tScenes').classList.toggle('sel', which === 'scenes'); $('tText').classList.toggle('sel', which === 'text');
+  $('paneScenes').classList.toggle('show', which === 'scenes'); $('paneText').classList.toggle('show', which === 'text');
+}
+function selectText(id) {
+  selText = id;
+  if (id) { selClip = -1; showSide('text'); const t = P.texts.find(x => x.id === id); const g = gNow(); if (t && (g < t.start || g >= t.start + t.dur)) { seekG(t.start + Math.min(t.dur / 2, 600)); montTL.time = t.start + Math.min(t.dur / 2, 600); } }
+  buildTextEditor(); refreshMontTools(); dirty();
+}
+let openSections = new Set(['Estilos']);
+function buildTextEditor() {
+  const box = $('textEditor'); box.innerHTML = '';
+  const t = P.texts.find(x => x.id === selText);
+  if (!t) {
+    box.innerHTML = `<p class="muted">Nenhum texto selecionado.</p><p class="muted">No modo 🎬 Montagem, clique em <b>T Texto</b> (ou tecla T), ou clique num texto na prévia ou na faixa roxa.</p>`;
+    const b = tbtn('T Novo texto', '', addText, 'accent'); box.appendChild(b); return;
+  }
+  const ta = document.createElement('textarea'); ta.value = t.text; ta.placeholder = 'Digite o texto';
+  ta.oninput = () => { t.text = ta.value; dirty(); commitSoon(); };
+  box.appendChild(ta);
+  const top = document.createElement('div'); top.className = 'row';
+  top.append(tbtn('⧉ Duplicar', '', () => { const c = Object.assign({}, t, { id: newId(), start: t.start + t.dur }); P.texts.push(c); commit(); selectText(c.id); }),
+    tbtn('⇤ Início aqui', 'Começa no cursor', () => { const g = Math.round(gNow()); if (g < t.start + t.dur - 300) { t.dur = t.start + t.dur - g; t.start = g; commit(); } }),
+    tbtn('⇥ Fim aqui', 'Termina no cursor', () => { const g = Math.round(gNow()); if (g > t.start + 300) { t.dur = g - t.start; commit(); } }),
+    tbtn('🗑', 'Apagar (Del)', () => deleteText(t.id)));
+  box.appendChild(top);
+
+  const sec = (name, build) => {
+    const d = document.createElement('details'); if (openSections.has(name)) d.open = true;
+    d.ontoggle = () => { d.open ? openSections.add(name) : openSections.delete(name); };
+    const s = document.createElement('summary'); s.textContent = name; d.appendChild(s);
+    build(d); box.appendChild(d);
+  };
+  const changed = () => { dirty(); commitSoon(); };
+  const slider = (parent, label, key, min, max, stepv = .01) => {
+    const r = document.createElement('div'); r.className = 'row';
+    r.innerHTML = `<label>${label}</label>`;
+    const i = document.createElement('input'); i.type = 'range'; i.min = min; i.max = max; i.step = stepv; i.value = t[key]; i.dataset.key = key;
+    i.oninput = () => { t[key] = +i.value; changed(); };
+    r.appendChild(i); parent.appendChild(r); return i;
+  };
+  const swatch = (parent, key, onPick) => {
+    const w = document.createElement('div'); w.className = 'sw';
+    PALETTE.forEach(c => { const i = document.createElement('i'); i.style.background = css(c); if (c === t[key]) i.className = 'sel'; i.onclick = () => { t[key] = c; onPick && onPick(); [...w.children].forEach(x => x.className = ''); i.className = 'sel'; changed(); }; w.appendChild(i); });
+    parent.appendChild(w);
+  };
+  const chips = (parent, names, key, after) => {
+    const w = document.createElement('div'); w.className = 'chips';
+    names.forEach((n, k) => { const b = tbtn(n, '', () => { t[key] = k; [...w.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); changed(); after && after(); }); if (t[key] === k) b.classList.add('on'); w.appendChild(b); });
+    parent.appendChild(w);
+  };
+  sec('Estilos', d => {
+    const grid = document.createElement('div'); grid.className = 'grid';
+    PRESETS.forEach(([name, fn]) => {
+      const tile = document.createElement('div'); tile.className = 'tile';
+      const smp = Object.assign({}, t, { text: 'Aa', scale: 1, rot: 0 }); fn(smp);
+      const src = renderText(smp, 420);
+      const c = document.createElement('canvas'); c.width = 120; c.height = 64; const g = c.getContext('2d');
+      const s = Math.min(1, 110 / src.width, 58 / src.height); g.drawImage(src, (120 - src.width * s) / 2, (64 - src.height * s) / 2, src.width * s, src.height * s);
+      tile.appendChild(c); tile.appendChild(document.createTextNode(name));
+      tile.onclick = () => { fn(t); changed(); buildTextEditor(); };
+      grid.appendChild(tile);
+    });
+    d.appendChild(grid);
+  });
+  sec('Fonte', d => {
+    const grid = document.createElement('div'); grid.className = 'grid f3';
+    FONTS.forEach((f, k) => {
+      const tile = document.createElement('div'); tile.className = 'tile' + (t.font === k ? ' sel' : '');
+      tile.innerHTML = `<div style="font:${f[2]} ${f[4] ? 'small-caps ' : ''}${f[1]} 18px ${f[3].replace(/"/g, "'")};color:#fff">Abc</div>${f[0]}`;
+      tile.onclick = () => { t.font = k; changed(); [...grid.children].forEach(x => x.classList.remove('sel')); tile.classList.add('sel'); };
+      grid.appendChild(tile);
+    });
+    d.appendChild(grid);
+  });
+  sec('Cor', d => { swatch(d, 'color'); slider(d, 'Opacidade', 'opacity', .1, 1); });
+  sec('Contorno', d => { const s = slider(d, 'Espessura', 'strokeW', 0, 1); swatch(d, 'strokeColor', () => { if (t.strokeW < .05) { t.strokeW = .5; s.value = .5; } }); });
+  sec('Brilho', d => { const s = slider(d, 'Intensidade', 'glow', 0, 1); swatch(d, 'glowColor', () => { if (t.glow < .05) { t.glow = .75; s.value = .75; } }); });
+  sec('Fundo', d => { const s = slider(d, 'Opacidade', 'bgAlpha', 0, 1); slider(d, 'Arredondado', 'bgRound', 0, 1); swatch(d, 'bgColor', () => { if (t.bgAlpha < .05) { t.bgAlpha = .75; s.value = .75; } }); });
+  sec('Sombra', d => { slider(d, 'Opacidade', 'shadow', 0, 1); slider(d, 'Desfoque', 'shadowBlur', 0, 1); });
+  sec('Animação', d => {
+    const lab = s => { const p = document.createElement('div'); p.className = 'muted'; p.textContent = s; d.appendChild(p); };
+    const prev = (a, b) => { seekG(a); montTL.time = a; stopAtG = b; vid.play().catch(() => {}); };
+    lab('Entrada'); chips(d, IN_NAMES, 'animIn', () => prev(t.start, Math.min(t.start + t.dur, t.start + 1300)));
+    lab('Saída'); chips(d, OUT_NAMES, 'animOut', () => prev(Math.max(t.start, t.start + t.dur - 1300), t.start + t.dur));
+    lab('Loop'); chips(d, LOOP_NAMES, 'animLoop', () => prev(t.start, Math.min(t.start + t.dur, t.start + 2500)));
+  });
+  sec('Ajustes', d => {
+    slider(d, 'Tamanho', 'scale', .3, 4); slider(d, 'Girar (°)', 'rot', -180, 180, 1);
+    const p = document.createElement('div'); p.className = 'muted'; p.textContent = 'Alinhamento'; d.appendChild(p);
+    chips(d, ['Esquerda', 'Centro', 'Direita'], 'align');
+    const q = document.createElement('div'); q.className = 'chips';
+    [['Topo', .5, .12], ['Meio', .5, .5], ['Embaixo', .5, .86]].forEach(([n, x, y]) => q.appendChild(tbtn(n, '', () => { t.x = x; t.y = y; changed(); })));
+    d.appendChild(q);
+    const r = document.createElement('div'); r.className = 'chips';
+    r.append(tbtn('−0,5s', '', () => { t.dur = Math.max(300, t.dur - 500); commit(); }), tbtn('+0,5s', '', () => { t.dur += 500; commit(); }),
+      tbtn('Cena inteira', '', () => { const s = clipStarts(); const [i] = locate(t.start); t.start = s[i]; t.dur = s[i + 1] - s[i]; commit(); }));
+    d.appendChild(r);
+  });
+}
+function syncTextEditorValues() {
+  const t = P.texts.find(x => x.id === selText); if (!t) return;
+  document.querySelectorAll('#textEditor input[type=range]').forEach(i => { if (i.dataset.key) i.value = t[i.dataset.key]; });
+}
+
+// ---------------------------------------------------------------- exportar
+let exporting = false, expCancel = false;
+function openExport() {
+  if (!P.seq.length) return toast('A montagem está vazia');
+  if (!videoReady) return toast('Abra o filme primeiro');
+  vid.pause();
+  $('expInfo').textContent = `${P.seq.length} cenas • ${fmt(totalMs(), false)} • ${P.texts.length} textos`;
+  $('expOpts').style.display = ''; $('expRun').style.display = 'none'; $('expClose').textContent = 'Fechar';
+  $('dlgExport').showModal();
+}
+$('expOpts').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.h) recordExport(+b.dataset.h);
+  else if (b.dataset.s) { downloadScript(b.dataset.s); $('dlgExport').close(); }
+});
+$('expClose').onclick = () => { if (exporting) { expCancel = true; } else $('dlgExport').close(); };
+let audioCtx = null, srcNode = null, speakerGain = null;
+function pickMime() {
+  const c = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+}
+const waitEv = (el, ev, ms = 4000) => new Promise(res => { let done = false; const f = () => { if (done) return; done = true; el.removeEventListener(ev, f); res(); }; el.addEventListener(ev, f); setTimeout(f, ms); });
+async function recordExport(h) {
+  if (!window.MediaRecorder) return alert('Este navegador não grava vídeo. Use Chrome ou Firefox atualizados.');
+  if (mode !== 'mont') setMode('mont');
+  const outH = Math.min(h, P.h) & ~1, outW = Math.round(P.w * outH / P.h) & ~1;
+  const cv = document.createElement('canvas'); cv.width = outW; cv.height = outH; const cx = cv.getContext('2d');
+  cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
+  const stream = cv.captureStream(30);
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      srcNode = audioCtx.createMediaElementSource(vid);
+      speakerGain = audioCtx.createGain(); srcNode.connect(speakerGain); speakerGain.connect(audioCtx.destination);
+    }
+    await audioCtx.resume();
+    var dest = audioCtx.createMediaStreamDestination(); srcNode.connect(dest);
+    dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+    speakerGain.gain.value = 0;
+  } catch (e) { console.warn('sem áudio', e); }
+  const mime = pickMime();
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: outH >= 1080 ? 8e6 : outH >= 720 ? 4e6 : 2e6 } : undefined);
+  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  exporting = true; expCancel = false; exportTextCache.clear();
+  $('expOpts').style.display = 'none'; $('expRun').style.display = ''; $('expClose').textContent = 'Cancelar';
+  const st = clipStarts(), tot = st[st.length - 1];
+  const rect = { x: 0, y: 0, w: outW, h: outH };
+  let started = false;
+  try {
+    for (let i = 0; i < P.seq.length && !expCancel; i++) {
+      const sc = scene(P.seq[i].scene); if (!sc) continue;
+      ci = i;
+      vid.currentTime = sc.start / 1000; await waitEv(vid, 'seeked');
+      if (!started) { rec.start(1000); started = true; } else rec.resume();
+      await vid.play();
+      await new Promise(res => {
+        const frame = () => {
+          const t = vid.currentTime * 1000;
+          const g = st[i] + clamp(t - sc.start, 0, sc.end - sc.start);
+          cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
+          cx.drawImage(vid, 0, 0, outW, outH);
+          drawTexts(cx, rect, g, true);
+          $('expBar').style.width = (100 * g / tot).toFixed(1) + '%';
+          $('expLbl').textContent = `Gravando… ${Math.floor(100 * g / tot)}% (${fmt(g, false)} de ${fmt(tot, false)})`;
+          if (expCancel || t >= sc.end - 20 || vid.ended) { vid.pause(); rec.pause(); res(); return; }
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    }
+    if (!started) throw new Error('nada gravado');
+    const done = new Promise(r => rec.onstop = r); rec.stop(); await done;
+    if (expCancel) { toast('Exportação cancelada'); return; }
+    const type = (mime || 'video/webm').split(';')[0];
+    const blob = new Blob(chunks, { type });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    $('expLbl').textContent = `Pronto! Arquivo baixado: ${a.download}` + (type.includes('webm') ? ' (WebM abre no VLC, Chrome e YouTube).' : '');
+    $('expBar').style.width = '100%';
+  } catch (e) {
+    alert('Erro na exportação: ' + e.message);
+  } finally {
+    exporting = false; if (speakerGain) speakerGain.gain.value = 1;
+    try { if (dest) srcNode.disconnect(dest); } catch (e) {}
+    $('expClose').textContent = 'Fechar';
+    seekG(0);
+  }
+}
+function downloadScript(kind) {
+  const film = P.fileName || 'filme.mp4';
+  const lines = ['@echo off', 'chcp 65001 >nul', 'cd /d "%~dp0"', `set "FILME=${film}"`, '',
+    'echo ================================================',
+    `echo  Leve Editor - ${P.name.replace(/[&|<>^%]/g, '')}`,
+    'echo  Coloque este .bat, o ffmpeg.exe e o filme na MESMA pasta.',
+    'echo ================================================',
+    'where ffmpeg >nul 2>nul || if not exist ffmpeg.exe ( echo Falta o ffmpeg.exe nesta pasta. Baixe em https://www.gyan.dev/ffmpeg/builds/ & pause & exit /b )',
+    'if not exist "%FILME%" ( echo Nao achei o filme "%FILME%" nesta pasta. & pause & exit /b )',
+    'if exist lista_leve.txt del lista_leve.txt', ''];
+  P.seq.forEach((q, i) => {
+    const s = scene(q.scene); if (!s) return;
+    const ss = (s.start / 1000).toFixed(3), d = ((s.end - s.start) / 1000).toFixed(3), part = `parte_${pad(i + 1, 3)}.mp4`;
+    lines.push(`echo Cena ${i + 1} de ${P.seq.length}: ${s.name.replace(/[&|<>^%]/g, '')}`);
+    if (kind === 'copy') lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c copy -avoid_negative_ts make_zero ${part}`);
+    else lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 48000 ${part}`);
+    lines.push(`echo file '${part}'>> lista_leve.txt`);
+  });
+  const out = `${P.name.replace(/[\\/:*?"<>|&%^]/g, '_')}_final.mp4`;
+  lines.push('', 'echo Juntando...', `ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i lista_leve.txt -c copy "${out}"`,
+    'del parte_*.mp4 lista_leve.txt', 'echo.', `echo Pronto: ${out}`, 'pause');
+  const blob = new Blob([lines.join('\r\n')], { type: 'application/octet-stream' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `exportar_${kind === 'copy' ? 'rapido' : 'exato'}.bat`;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Script baixado — coloque junto do filme e do ffmpeg.exe e dê dois cliques');
+}
+
+// ---------------------------------------------------------------- projeto: abrir / salvar / novo
+function saveProjectFile() {
+  commit();
+  const blob = new Blob([JSON.stringify(P, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `${P.name.replace(/[\\/:*?"<>|]/g, '_')}.leve.json`; document.body.appendChild(a); a.click(); a.remove();
+  toast('Projeto salvo (.json)');
+}
+function loadProjectText(txt) {
+  try {
+    const p = normalize(JSON.parse(txt));
+    P = p; undoStack = []; redoStack = []; lastSnap = null; textCache.clear(); selClip = -1; selText = null; inMs = outMs = -1; editingSceneId = null;
+    commit(); afterProjectChange();
+    if (!videoReady || (P.fileName && vid.src && !videoURL)) askFilm();
+    else if (P.fileName) toast(`Projeto aberto. Se o filme não for "${P.fileName}", abra o filme certo.`);
+  } catch (e) { alert('Arquivo de projeto inválido.'); }
+}
+function askFilm() {
+  $('emptyMsg').style.display = 'flex';
+  $('emptyText').textContent = P.fileName ? `Abra o filme "${P.fileName}" para continuar o projeto.` : 'Abra um filme para começar (MP4 funciona melhor).';
+}
+function afterProjectChange() {
+  $('projName').textContent = P.name;
+  refreshScenes(); montTL.refresh(); refreshMontTools(); buildTextEditor(); updateSel(); cutTL.clampZ(); dirty();
+}
+
+// ---------------------------------------------------------------- tamanho dos canvas
+function fitCanvas(cv) {
+  const r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * DPR)), h = Math.max(1, Math.round(r.height * DPR));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; return true; }
+  return false;
+}
+function resizeAll() {
+  if (fitCanvas(ov)) textCache.clear();
+  computeContent();
+  fitCanvas($('tl')); fitCanvas($('mtl'));
+  cutTL.clampZ(); montTL.clampZ(); dirty();
+}
+window.addEventListener('resize', resizeAll);
+
+// ---------------------------------------------------------------- botões e teclado
+$('bOpenVideo').onclick = $('bOpenVideo2').onclick = () => $('fVideo').click();
+$('fVideo').onchange = e => { const f = e.target.files[0]; if (f) openVideoFile(f); e.target.value = ''; };
+$('bOpenProj').onclick = () => $('fProj').click();
+$('fProj').onchange = e => { const f = e.target.files[0]; if (f) f.text().then(loadProjectText); e.target.value = ''; };
+$('bSaveProj').onclick = saveProjectFile;
+$('bNew').onclick = () => { if (confirm('Começar um projeto novo? (o atual some daqui — salve antes se quiser)')) { P = blankProject(); undoStack = []; redoStack = []; lastSnap = null; inMs = outMs = -1; selClip = -1; selText = null; commit(); afterProjectChange(); askFilm(); } };
+$('projName').addEventListener('blur', commit);
+$('projName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+$('bUndo').onclick = undo; $('bRedo').onclick = redo;
+$('bHelp').onclick = () => $('dlgHelp').showModal();
+$('bExport').onclick = openExport;
+$('bPlay').onclick = togglePlay;
+const FRAME = 1000 / 30;
+$('bBack1').onclick = () => step(-1000); $('bFwd1').onclick = () => step(1000);
+$('bBackF').onclick = () => step(-FRAME); $('bFwdF').onclick = () => step(FRAME);
+$('mCut').onclick = () => setMode('cut'); $('mMont').onclick = () => setMode('mont');
+$('bIn').onclick = markIn; $('bOut').onclick = markOut;
+$('bClear').onclick = () => { inMs = outMs = -1; editingSceneId = null; updateSel(); };
+$('bSave').onclick = saveScene;
+$('bCancelEdit').onclick = () => { editingSceneId = null; inMs = outMs = -1; updateSel(); };
+$('bLock').onclick = () => { lockOn = !lockOn; updateSel(); if (lockOn && hasCut()) { seekFilm(inMs); cutTL.focusSel(); cutTL.time = inMs; } };
+$('bLoop').onclick = () => { loopOn = !loopOn; updateSel(); };
+$('bZIn').onclick = () => cutTL.zoom(2.5); $('bZOut').onclick = () => cutTL.zoom(1 / 2.5);
+$('bZFit').onclick = () => cutTL.fit(); $('bZFine').onclick = () => cutTL.zoomTo(3000);
+$('tScenes').onclick = () => showSide('scenes'); $('tText').onclick = () => { showSide('text'); buildTextEditor(); };
+$('bAddAll').onclick = () => { if (!P.scenes.length) return toast('Ainda não tem cenas'); addToSeq(sortedScenes()); };
+
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'textarea' || tag === 'input' || e.target.isContentEditable) return;
+  if (document.querySelector('dialog[open]')) return;
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (k === 'y' || k === 'Y')) { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (k === 's' || k === 'S')) { e.preventDefault(); saveProjectFile(); return; }
+  if ((e.ctrlKey || e.metaKey) && (k === 'o' || k === 'O')) { e.preventDefault(); $('fVideo').click(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  switch (k) {
+    case ' ': e.preventDefault(); togglePlay(); break;
+    case 'ArrowLeft': e.preventDefault(); step(e.shiftKey ? -1000 : -FRAME); break;
+    case 'ArrowRight': e.preventDefault(); step(e.shiftKey ? 1000 : FRAME); break;
+    case 'Home': mode === 'cut' ? seekFilm(0) : seekG(0); break;
+    case 'End': mode === 'cut' ? seekFilm(P.duration) : seekG(totalMs() - 1); break;
+    case 'i': case 'I': if (mode === 'cut') markIn(); break;
+    case 'o': case 'O': if (mode === 'cut') markOut(); break;
+    case 's': case 'S': if (mode === 'cut') saveScene(); break;
+    case 'l': case 'L': $('bLock').click(); break;
+    case 'r': case 'R': $('bLoop').click(); break;
+    case '1': setMode('cut'); break;
+    case '2': setMode('mont'); break;
+    case 't': case 'T': addText(); break;
+    case '+': case '=': (mode === 'cut' ? cutTL : montTL).zoom(2); break;
+    case '-': (mode === 'cut' ? cutTL : montTL).zoom(.5); break;
+    case 'Delete': case 'Backspace':
+      if (mode === 'mont') { if (selText) deleteText(selText); else if (selClip >= 0) deleteClip(selClip); }
+      break;
+    case 'Escape': selClip = -1; selectText(null); break;
+  }
+});
+window.addEventListener('beforeunload', () => { commit(); });
+
+// ---------------------------------------------------------------- início
+(function start() {
+  try { const s = localStorage.getItem(LS_KEY); if (s) P = normalize(JSON.parse(s)); } catch (e) {}
+  lastSnap = JSON.stringify(P);
+  afterProjectChange();
+  askFilm();
+  resizeAll();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
