@@ -87,11 +87,60 @@
                 android:orientation="vertical"
                 android:paddingBottom="8dp">
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginHorizontal="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnZoomOut"
+                        style="@style/Btn"
+                        android:layout_width="44dp"
+                        android:layout_height="40dp"
+                        android:text="−"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/tvZoom"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:textColor="@color/sub"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnZoomFit"
+                        style="@style/Btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="Tudo" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnZoomFine"
+                        style="@style/Btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="Preciso" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnZoomIn"
+                        style="@style/Btn"
+                        android:layout_width="44dp"
+                        android:layout_height="40dp"
+                        android:text="+"
+                        android:textSize="18sp" />
+                </LinearLayout>
+
                 <com.leve.editor.TimelineView
                     android:id="@+id/timeline"
                     android:layout_width="match_parent"
-                    android:layout_height="100dp"
-                    android:layout_marginTop="6dp" />
+                    android:layout_height="120dp"
+                    android:layout_marginTop="2dp" />
 
                 <TextView
                     android:id="@+id/tvSel"
@@ -209,7 +258,7 @@
                     android:layout_marginHorizontal="12dp"
                     android:layout_marginTop="6dp"
                     android:gravity="center"
-                    android:text="Arraste a linha do tempo • pinça para zoom • arraste as bordas brancas para ajustar o corte. Depois de salvar, o próximo Início já fica no Fim da cena anterior."
+                    android:text="Barra fina no topo = filme inteiro (toque para pular). Arraste a linha do tempo • pinça ou − / + para zoom • Preciso = quadro a quadro • arraste as bordas brancas para ajustar o corte. Depois de salvar, o próximo Início já fica no Fim da cena anterior."
                     android:textColor="@color/sub"
                     android:textSize="12sp" />
             </LinearLayout>

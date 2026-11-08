@@ -28,6 +28,8 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
@@ -96,9 +98,14 @@ class Exporter(private val ctx: Context, private val project: Project, private v
     var running = false
         private set
 
+    /**
+     * [fast] = sem recompressão: copia o vídeo como está (segundos), mas cada corte começa
+     * no keyframe mais próximo e não tem texto. Senão recodifica (corte exato + texto).
+     */
     fun start(
         height: Int,
         removeAudio: Boolean,
+        fast: Boolean,
         onProgress: (Int) -> Unit,
         onDone: (File) -> Unit,
         onError: (String) -> Unit
@@ -118,9 +125,13 @@ class Exporter(private val ctx: Context, private val project: Project, private v
                     MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs(sc.startMs)
                         .setEndPositionMs(sc.endMs)
+                        .setStartsAtKeyFrame(fast)
                         .build()
                 )
                 .build()
+            if (fast) {
+                return@mapNotNull EditedMediaItem.Builder(mi).setRemoveAudio(removeAudio).build()
+            }
             val video = mutableListOf<Effect>(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT))
             if (s.text.isNotBlank()) {
                 video.add(OverlayEffect(ImmutableList.of<TextureOverlay>(SceneTextOverlay(s, outW, outH))))
@@ -135,9 +146,24 @@ class Exporter(private val ctx: Context, private val project: Project, private v
         val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
         val out = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
 
-        val t = Transformer.Builder(ctx)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
-            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+        val builder = Transformer.Builder(ctx)
+        if (!fast) {
+            // bitrate na medida: arquivo menor e codificador de hardware trabalhando folgado
+            val bitrate = when {
+                outH <= 480 -> 1_500_000
+                outH <= 720 -> 3_000_000
+                else -> 6_000_000
+            }
+            builder.setVideoMimeType(MimeTypes.VIDEO_H264)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                .setEncoderFactory(
+                    DefaultEncoderFactory.Builder(ctx)
+                        .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(bitrate).build())
+                        .setEnableFallback(true)
+                        .build()
+                )
+        }
+        val t = builder
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     finish()

@@ -1,5 +1,6 @@
 package com.leve.editor
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -12,14 +13,18 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.VelocityTracker
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.OverScroller
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 
 /**
  * Linha do tempo estilo CapCut: cursor fixo no meio, o filme corre por baixo.
- * Arrastar = navegar, pinça = zoom, bordas brancas = ajustar o corte.
+ * - Barra fina no topo = filme inteiro (toque/arraste para pular rápido).
+ * - Arrastar a tira = navegar, pinça = zoom (do filme todo até ~0,4s por tela).
+ * - Bordas brancas = ajustar o corte.
  */
 class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
 
@@ -32,6 +37,8 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
 
     var listener: Listener? = null
     var thumbs: ThumbnailProvider? = null
+    /** Chamado quando o zoom muda (ms visíveis na tela). */
+    var onZoomChanged: ((Long) -> Unit)? = null
 
     var durationMs = 0L
         set(v) { field = v; clampZoom(); invalidate() }
@@ -51,8 +58,14 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     private val d = resources.displayMetrics.density
     private var pxPerMs = 0f
 
-    private val rulerH = 16 * d
-    private val stripTop = rulerH + 4 * d
+    // faixas verticais
+    private val ovTop = 2 * d
+    private val ovH = 12 * d
+    private val ovBottom = ovTop + ovH
+    private val rulerTop = ovBottom + 4 * d
+    private val rulerH = 14 * d
+    private val rulerBottom = rulerTop + rulerH
+    private val stripTop = rulerBottom + 4 * d
     private val stripH = 56 * d
     private val stripBottom = stripTop + stripH
     private val sceneTop = stripBottom + 6 * d
@@ -71,6 +84,12 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     private val pScene = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pInMark = Paint().apply { color = 0xFF22D3EE.toInt(); strokeWidth = 3 * d }
     private val pDim = Paint().apply { color = 0x88000000.toInt() }
+    private val pOvBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF26262C.toInt() }
+    private val pOvWin = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1.5f * d
+    }
+    private val pOvPos = Paint().apply { color = 0xFF22D3EE.toInt(); strokeWidth = 2 * d }
+    private val pOvSel = Paint().apply { color = 0x8822D3EE.toInt() }
 
     private val rect = RectF()
     private val src = Rect()
@@ -95,15 +114,48 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     private fun x(ms: Long): Float = width / 2f + (ms - timeMs) * pxPerMs
     private fun msAt(x: Float): Long = (timeMs + (x - width / 2f) / pxPerMs).toLong()
 
-    private fun minZoom() = if (durationMs > 0 && width > 0) (width * 0.9f) / durationMs else 0.0001f
-    private fun maxZoom() = if (width > 0) width / 1500f else 1f
+    private fun minZoom() = if (durationMs > 0 && width > 0) (width * 0.92f) / durationMs else 0.0001f
+    private fun maxZoom() = if (width > 0) width / 400f else 1f   // ~0,4s na tela = quase quadro a quadro
 
     private fun clampZoom() {
         if (width == 0) return
         if (pxPerMs <= 0f) pxPerMs = width / 60_000f
         val lo = minZoom()
         pxPerMs = pxPerMs.coerceIn(lo, max(lo, maxZoom()))
+        onZoomChanged?.invoke(visibleMs())
     }
+
+    fun visibleMs(): Long = if (pxPerMs > 0) (width / pxPerMs).toLong() else 0L
+
+    // ---------------- zoom por botão ----------------
+
+    private var zoomAnim: ValueAnimator? = null
+
+    private fun animateZoomTo(target: Float) {
+        zoomAnim?.cancel()
+        val lo = minZoom()
+        val t = target.coerceIn(lo, max(lo, maxZoom()))
+        val from = pxPerMs
+        if (from <= 0f || abs(from - t) < 1e-9f) return
+        // interpola em escala logarítmica: fica suave do filme todo até o quadro
+        zoomAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 220
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                pxPerMs = (from * (t / from).toDouble().pow(f.toDouble())).toFloat()
+                clampZoom()
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    fun zoomIn() = animateZoomTo(pxPerMs * 2.5f)
+    fun zoomOut() = animateZoomTo(pxPerMs / 2.5f)
+    fun zoomFit() = animateZoomTo(minZoom())
+    /** Zoom num nível fixo (ms mostrados na tela inteira). */
+    fun zoomToVisible(ms: Long) { if (width > 0) animateZoomTo(width.toFloat() / ms) }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -118,36 +170,38 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
         val visStart = max(0L, msAt(0f))
         val visEnd = min(durationMs, msAt(w) + 1)
 
+        drawOverview(c, w, visStart, visEnd)
+
         // régua
         val labelStep = LABEL_STEPS.firstOrNull { it * pxPerMs >= 70 * d } ?: LABEL_STEPS.last()
         var t = (visStart / labelStep) * labelStep
         while (t <= visEnd) {
             val xx = x(t)
-            c.drawLine(xx, rulerH - 5 * d, xx, rulerH, pTick)
-            c.drawText(Fmt.time(t, false), xx + 3 * d, rulerH - 6 * d, pText)
+            c.drawLine(xx, rulerBottom - 5 * d, xx, rulerBottom, pTick)
+            c.drawText(Fmt.time(t, labelStep < 1000), xx + 3 * d, rulerBottom - 4 * d, pText)
             val half = x(t + labelStep / 2)
-            c.drawCircle(half, rulerH - 2 * d, 1.2f * d, pText)
+            c.drawCircle(half, rulerBottom - 2 * d, 1.2f * d, pText)
             t += labelStep
         }
 
         // tira de miniaturas
         val msPerTile = tileW / pxPerMs
         val step = TILE_STEPS.firstOrNull { it >= msPerTile } ?: TILE_STEPS.last()
+        val exact = step <= 2000   // zoom alto: quadro exato; zoom baixo: keyframe (rápido)
         t = (visStart / step) * step
         val provider = thumbs
         while (t < visEnd) {
             val l = x(t)
             val r = x(min(t + step, durationMs))
             rect.set(l, stripTop, r, stripBottom)
-            val b = provider?.get(t)
+            val b = provider?.get(t, exact)
             if (b != null && !b.isRecycled) drawCrop(c, b, rect) else c.drawRect(rect, pEmpty)
             t += step
         }
-        // bordas do filme
         c.drawRect(x(0) - 2 * d, stripTop, x(0), stripBottom, pSelEdge)
         c.drawRect(x(durationMs), stripTop, x(durationMs) + 2 * d, stripBottom, pSelEdge)
 
-        // cenas já salvas (barrinhas coloridas)
+        // cenas já salvas
         for (s in scenes) {
             val l = x(s.startMs); val r = x(s.endMs)
             if (r < 0 || l > w) continue
@@ -161,7 +215,6 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
             val xi = x(inMs)
             if (outMs > inMs) {
                 val xo = x(outMs)
-                // escurece fora da seleção
                 c.drawRect(0f, stripTop, xi, stripBottom, pDim)
                 c.drawRect(xo, stripTop, w, stripBottom, pDim)
                 c.drawRect(xi, stripTop, xo, stripBottom, pSelFill)
@@ -175,10 +228,34 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
             }
         }
 
-        // cursor (meio)
+        // cursor
         val cx = w / 2f
-        c.drawLine(cx, 0f, cx, height.toFloat(), pHead)
-        c.drawCircle(cx, 3 * d, 4 * d, pHead)
+        c.drawLine(cx, rulerTop, cx, height.toFloat(), pHead)
+        c.drawCircle(cx, rulerTop + 2 * d, 4 * d, pHead)
+    }
+
+    /** Mini-mapa do filme inteiro: cenas, seleção, parte visível e posição. */
+    private fun drawOverview(c: Canvas, w: Float, visStart: Long, visEnd: Long) {
+        val pad = 8 * d
+        val bw = w - 2 * pad
+        fun ox(ms: Long) = pad + bw * ms / durationMs.toFloat()
+        rect.set(pad, ovTop, w - pad, ovBottom)
+        c.drawRoundRect(rect, ovH / 2, ovH / 2, pOvBg)
+        for (s in scenes) {
+            pScene.color = s.color
+            rect.set(ox(s.startMs), ovTop + ovH * 0.3f, max(ox(s.endMs), ox(s.startMs) + 2 * d), ovBottom - ovH * 0.3f)
+            c.drawRect(rect, pScene)
+        }
+        if (inMs >= 0 && outMs > inMs) {
+            rect.set(ox(inMs), ovTop, max(ox(outMs), ox(inMs) + 2 * d), ovBottom)
+            c.drawRect(rect, pOvSel)
+        }
+        // janela visível
+        val l = ox(visStart); val r = max(ox(visEnd), l + 6 * d)
+        rect.set(l, ovTop, r, ovBottom)
+        c.drawRoundRect(rect, 3 * d, 3 * d, pOvWin)
+        val px = ox(timeMs)
+        c.drawLine(px, ovTop - d, px, ovBottom + d, pOvPos)
     }
 
     private fun drawHandle(c: Canvas, l: Float, r: Float) {
@@ -192,8 +269,8 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
         val dw = dst.width(); val dh = dst.height()
         if (dw <= 0 || dh <= 0) return
         val scale = max(dw / b.width, dh / b.height)
-        val sw = (dw / scale).toInt().coerceAtMost(b.width)
-        val sh = (dh / scale).toInt().coerceAtMost(b.height)
+        val sw = (dw / scale).toInt().coerceIn(1, b.width)
+        val sh = (dh / scale).toInt().coerceIn(1, b.height)
         val sx = (b.width - sw) / 2
         val sy = (b.height - sh) / 2
         src.set(sx, sy, sx + sw, sy + sh)
@@ -213,15 +290,28 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     private var scaled = false
 
     private val scaleDetector = ScaleGestureDetector(ctx, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(det: ScaleGestureDetector): Boolean {
+            zoomAnim?.cancel()
+            return true
+        }
+
         override fun onScale(det: ScaleGestureDetector): Boolean {
-            pxPerMs *= det.scaleFactor
+            // expoente > 1 = zoom mais rápido (atravessa um filme de 2h em um gesto)
+            pxPerMs *= det.scaleFactor.toDouble().pow(1.8).toFloat()
             clampZoom()
             invalidate()
             return true
         }
     })
 
+    private fun overviewMs(ex: Float): Long {
+        val pad = 8 * d
+        val f = ((ex - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
+        return (durationMs * f).toLong()
+    }
+
     private fun hitHandle(ex: Float, ey: Float): Int {
+        if (ey <= ovBottom + 5 * d) return MODE_OVERVIEW
         if (ey < stripTop - 12 * d || ey > stripBottom + 12 * d) return MODE_SCROLL
         if (inMs < 0 || outMs <= inMs) return MODE_SCROLL
         val xi = x(inMs) - HANDLE_W * d / 2
@@ -237,7 +327,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (durationMs <= 0) return false
-        scaleDetector.onTouchEvent(e)
+        if (mode != MODE_OVERVIEW) scaleDetector.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -254,11 +344,22 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                     MODE_OUT -> e.x - x(outMs)
                     else -> 0f
                 }
+                if (mode == MODE_OVERVIEW) {
+                    timeMs = overviewMs(e.x)
+                    listener?.onScrub(timeMs)
+                    invalidate()
+                }
             }
             MotionEvent.ACTION_POINTER_DOWN -> { scaled = true; reanchor = true }
             MotionEvent.ACTION_POINTER_UP -> reanchor = true
             MotionEvent.ACTION_MOVE -> {
                 vt?.addMovement(e)
+                if (mode == MODE_OVERVIEW) {
+                    timeMs = overviewMs(e.x)
+                    listener?.onScrub(timeMs)
+                    invalidate()
+                    return true
+                }
                 if (e.pointerCount > 1 || reanchor) {
                     anchorX = e.x; anchorTime = timeMs; reanchor = false
                     if (mode != MODE_SCROLL) mode = MODE_SCROLL
@@ -289,7 +390,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                 vt?.computeCurrentVelocity(1000)
                 val vx = vt?.xVelocity ?: 0f
                 vt?.recycle(); vt = null
-                if (mode == MODE_SCROLL && !scaled && abs(vx) > 600 * d / 3) {
+                if (mode == MODE_SCROLL && !scaled && abs(vx) > 200 * d) {
                     val pos = (timeMs * pxPerMs).toInt()
                     scroller.fling(pos, 0, (-vx).toInt(), 0, 0, (durationMs * pxPerMs).toInt(), 0, 0)
                     flinging = true
@@ -328,15 +429,16 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
         private const val MODE_SCROLL = 1
         private const val MODE_IN = 2
         private const val MODE_OUT = 3
+        private const val MODE_OVERVIEW = 4
         private const val HANDLE_W = 14
         const val MIN_SCENE = 200L
 
         private val TILE_STEPS = longArrayOf(
-            250, 500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000,
+            100, 250, 500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000,
             120_000, 300_000, 600_000, 1_200_000
         )
         private val LABEL_STEPS = longArrayOf(
-            1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 120_000,
+            200, 500, 1000, 2000, 5000, 10_000, 15_000, 30_000, 60_000, 120_000,
             300_000, 600_000, 900_000, 1_800_000, 3_600_000
         )
     }

@@ -27,6 +27,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
@@ -171,7 +172,11 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     // ---------------------------------------------------------------- player
 
     private fun setupPlayer() {
-        player = ExoPlayer.Builder(this).build()
+        // buffer pequeno: abre e pula mais rápido e gasta menos memória em celular fraco
+        val load = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(2_000, 8_000, 300, 800)
+            .build()
+        player = ExoPlayer.Builder(this).setLoadControl(load).build()
         playerView.player = player
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -202,7 +207,8 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         loadFull(project.lastPosMs)
 
         val tilePx = (56 * resources.displayMetrics.density).toInt()
-        thumbs = ThumbnailProvider(this, uri, (tilePx * 16 / 9 * 0.8f).toInt(), (tilePx * 0.8f).toInt()) {
+        val tlDir = java.io.File(Store.thumbFile(this, project.id, "x").parentFile, "tl")
+        thumbs = ThumbnailProvider(this, uri, tlDir, (tilePx * 16 / 9 * 0.8f).toInt(), (tilePx * 0.8f).toInt()) {
             timeline.invalidate()
         }.also { it.prefetch(project.durationMs) }
     }
@@ -254,8 +260,10 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         if (player.isPlaying) player.pause()
         stopAtMs = -1
         val now = SystemClock.uptimeMillis()
-        if (now - lastSeekAt > 70) {
-            player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+        val fine = timeline.visibleMs() in 1..20_000
+        if (now - lastSeekAt > (if (fine) 110 else 60)) {
+            // zoom alto = quadro exato; zoom baixo = keyframe (pula rápido em filme longo)
+            player.setSeekParameters(if (fine) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
             player.seekTo(ms)
             lastSeekAt = now
         }
@@ -279,6 +287,12 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     private fun setupCut() {
         timeline.listener = this
         timeline.thumbs = thumbs
+        val tvZoom = findViewById<TextView>(R.id.tvZoom)
+        timeline.onZoomChanged = { ms -> tvZoom.text = "Tela = ${zoomLabel(ms)}" }
+        findViewById<View>(R.id.btnZoomIn).setOnClickListener { timeline.zoomIn() }
+        findViewById<View>(R.id.btnZoomOut).setOnClickListener { timeline.zoomOut() }
+        findViewById<View>(R.id.btnZoomFit).setOnClickListener { timeline.zoomFit() }
+        findViewById<View>(R.id.btnZoomFine).setOnClickListener { timeline.zoomToVisible(3_000) }
         timeline.durationMs = project.durationMs
         timeline.scenes = project.scenes
         timeline.jumpTo(project.lastPosMs)
@@ -318,6 +332,13 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         btnSave.setOnClickListener { saveScene() }
         btnCancelEdit.setOnClickListener { cancelEdit() }
         updateSel()
+    }
+
+    private fun zoomLabel(ms: Long): String = when {
+        ms < 10_000 -> String.format("%.1fs", ms / 1000f)
+        ms < 120_000 -> "${ms / 1000}s"
+        ms < 7_200_000 -> "${ms / 60_000} min"
+        else -> String.format("%.1f h", ms / 3_600_000f)
     }
 
     private fun pushSel() {
@@ -600,16 +621,29 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     }
 
     private fun askExport() {
-        val opts = arrayOf("480p (mais rápido e leve)", "720p (recomendado)", "1080p (melhor qualidade)")
-        val heights = intArrayOf(480, 720, 1080)
+        val hasText = project.seq.any { it.text.isNotBlank() }
+        val opts = arrayOf(
+            "⚡ Rápida – sem recompressão (segundos)\nCorte pode variar ~1s, sem textos",
+            "480p – leve",
+            "720p – recomendado",
+            "1080p – melhor qualidade"
+        )
+        val heights = intArrayOf(0, 480, 720, 1080)
         MaterialAlertDialogBuilder(this)
             .setTitle("Exportar ${project.seq.size} cenas • ${Fmt.time(project.seqDurationMs(), false)}")
-            .setItems(opts) { _, w -> runExport(heights[w], false) }
+            .setItems(opts) { _, w ->
+                if (w == 0) {
+                    if (hasText) Dialogs.confirm(this, "Modo rápido sem textos",
+                        "No modo rápido o vídeo é copiado sem recompressão, então os textos não aparecem e cada cena começa no quadro-chave mais próximo (pode variar ~1s).\n\nPara ter os textos, use 480p/720p/1080p.",
+                        "Exportar assim") { runExport(0, false, true) }
+                    else runExport(0, false, true)
+                } else runExport(heights[w], false, false)
+            }
             .setNegativeButton("Cancelar", null)
             .show()
     }
 
-    private fun runExport(height: Int, removeAudio: Boolean) {
+    private fun runExport(height: Int, removeAudio: Boolean, fast: Boolean) {
         if (seqMode) stopSeqPreview()
         player.pause()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -632,7 +666,7 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         val ex = Exporter(this, project, uri)
         exporter = ex
         dlg = MaterialAlertDialogBuilder(this)
-            .setTitle("Exportando ${height}p")
+            .setTitle(if (fast) "Exportação rápida" else "Exportando ${height}p")
             .setView(box)
             .setCancelable(false)
             .setNegativeButton("Cancelar") { _, _ ->
@@ -642,11 +676,14 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
             }
             .show()
 
-        ex.start(height, removeAudio,
+        val t0 = SystemClock.elapsedRealtime()
+        ex.start(if (fast) 1080 else height, removeAudio, fast,
             onProgress = { pct ->
                 bar.isIndeterminate = false
                 bar.setProgressCompat(pct, true)
-                label.text = "Exportando… $pct%"
+                val el = (SystemClock.elapsedRealtime() - t0) / 1000
+                val eta = if (pct in 3..99) " • falta ~${Fmt.time(el * (100 - pct) / pct * 1000, false)}" else ""
+                label.text = "Exportando… $pct%$eta"
             },
             onDone = { file ->
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -671,8 +708,10 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
                     .setTitle("Erro na exportação")
                     .setMessage("$msg\n\nDica: tente uma qualidade menor" + if (!removeAudio) " ou exporte sem áudio." else ".")
                     .setNegativeButton("Fechar", null)
-                    .setNeutralButton("Tentar 480p") { _, _ -> runExport(480, removeAudio) }
-                if (!removeAudio) b.setPositiveButton("Sem áudio") { _, _ -> runExport(height, true) }
+                    .setNeutralButton(if (fast) "Tentar 720p" else "Tentar 480p") { _, _ ->
+                        runExport(if (fast) 720 else 480, removeAudio, false)
+                    }
+                if (!removeAudio) b.setPositiveButton("Sem áudio") { _, _ -> runExport(height, true, fast) }
                 b.show()
             }
         )
