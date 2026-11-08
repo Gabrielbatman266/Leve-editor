@@ -1,0 +1,5 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/tab_cut" android:title="Cortar" android:icon="@drawable/ic_cut"/>
+    <item android:id="@+id/tab_scenes" android:title="Cenas" android:icon="@drawable/ic_list"/>
+    <item android:id="@+id/tab_seq" android:title="Montagem" android:icon="@drawable/ic_movie"/>
+</menu>

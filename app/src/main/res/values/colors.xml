@@ -1,0 +1,11 @@
+<resources>
+    <color name="bg">#000000</color>
+    <color name="panel">#121214</color>
+    <color name="card">#1C1C20</color>
+    <color name="line">#2A2A30</color>
+    <color name="text">#F2F2F5</color>
+    <color name="sub">#9A9AA5</color>
+    <color name="accent">#22D3EE</color>
+    <color name="accent_dark">#0E7490</color>
+    <color name="danger">#F43F5E</color>
+</resources>
