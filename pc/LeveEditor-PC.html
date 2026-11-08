@@ -168,11 +168,11 @@ table.keys td{padding:3px 8px 3px 0}
   <h3>Exportar</h3>
   <div id="expInfo" class="muted"></div>
   <div class="opts" id="expOpts">
-    <button data-h="720" class="accent">720p com textos — recomendado<small>Grava no navegador. Leva o tempo do vídeo (10 min de montagem = ~10 min). Não minimize a aba.</small></button>
-    <button data-h="1080">1080p com textos<small>Melhor qualidade, arquivo maior.</small></button>
-    <button data-h="480">480p com textos<small>Mais leve para PC fraco.</small></button>
-    <button data-s="copy">⚡ Script ffmpeg rápido (sem textos)<small>Baixa um .bat que corta e junta sem recompressão, em segundos. Cortes no quadro-chave mais próximo (~1s).</small></button>
-    <button data-s="exact">🎯 Script ffmpeg exato (sem textos)<small>Recodifica com corte exato. Bem mais rápido que a gravação.</small></button>
+    <button data-z="720" class="accent">⚡ Rápido COM textos (ffmpeg) — 720p — recomendado<small>Baixa um .zip (script .bat + imagens dos textos). Extraia junto do filme e do ffmpeg.exe e dê dois cliques. Corte exato, bem mais rápido que gravar.</small></button>
+    <button data-z="1080">⚡ Rápido COM textos (ffmpeg) — 1080p<small>Igual ao de cima, em Full HD.</small></button>
+    <button data-s="copy">⚡⚡ Cópia sem recompressão (ffmpeg, sem textos)<small>Segundos. Cada cena começa no quadro-chave mais próximo (~1s antes).</small></button>
+    <button data-h="720">● Gravar no navegador — 720p com textos<small>Não precisa de nada instalado, mas leva o tempo do vídeo. Pode deixar em segundo plano.</small></button>
+    <button data-h="480">● Gravar no navegador — 480p com textos<small>Mais leve para PC fraco.</small></button>
   </div>
   <div id="expRun" style="display:none">
     <div id="expLbl">Preparando…</div>
@@ -296,7 +296,7 @@ function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); resto
 
 // ---------------------------------------------------------------- vídeo
 const vid = $('vid');
-let videoURL = null, videoReady = false;
+let videoURL = null, videoReady = false, currentFile = '';
 const thumbVid = document.createElement('video');
 thumbVid.muted = true; thumbVid.preload = 'auto';
 
@@ -310,6 +310,7 @@ function openVideoFile(file) {
   }
   if (videoURL) URL.revokeObjectURL(videoURL);
   videoURL = URL.createObjectURL(file);
+  currentFile = file.name;
   videoReady = false;
   thumbReset();
   P.fileName = file.name; P.uri = file.name;
@@ -1315,6 +1316,7 @@ function openExport() {
 $('expOpts').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.h) recordExport(+b.dataset.h);
+  else if (b.dataset.z) { ffmpegZip(+b.dataset.z); }
   else if (b.dataset.s) { downloadScript(b.dataset.s); $('dlgExport').close(); }
 });
 $('expClose').onclick = () => { if (exporting) { expCancel = true; } else $('dlgExport').close(); };
@@ -1324,73 +1326,203 @@ function pickMime() {
   return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
 const waitEv = (el, ev, ms = 4000) => new Promise(res => { let done = false; const f = () => { if (done) return; done = true; el.removeEventListener(ev, f); res(); }; el.addEventListener(ev, f); setTimeout(f, ms); });
+/** Timer que continua rodando mesmo com a aba em segundo plano (rAF para quando minimiza). */
+function makeTicker(fps, fn) {
+  try {
+    const w = new Worker(URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${Math.round(1000 / fps)})`], { type: 'text/javascript' })));
+    w.onmessage = fn;
+    return () => w.terminate();
+  } catch (e) {
+    const id = setInterval(fn, 1000 / fps);
+    return () => clearInterval(id);
+  }
+}
+let vid2 = null, src2 = null;
+/**
+ * Grava a montagem no navegador.
+ * Dois players se revezam: enquanto um toca a cena, o outro já fica parado no começo da próxima,
+ * então a troca é instantânea — sem quadro congelado e sem o áudio "andar" sozinho.
+ */
 async function recordExport(h) {
   if (!window.MediaRecorder) return alert('Este navegador não grava vídeo. Use Chrome ou Firefox atualizados.');
   if (mode !== 'mont') setMode('mont');
+  vid.pause();
   const outH = Math.min(h, P.h) & ~1, outW = Math.round(P.w * outH / P.h) & ~1;
-  const cv = document.createElement('canvas'); cv.width = outW; cv.height = outH; const cx = cv.getContext('2d');
+  const cv = document.createElement('canvas'); cv.width = outW; cv.height = outH;
+  const cx = cv.getContext('2d', { alpha: false });
   cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
   const stream = cv.captureStream(30);
+  let dest = null;
+  if (!vid2) { vid2 = document.createElement('video'); vid2.preload = 'auto'; vid2.playsInline = true; }
+  if (vid2.src !== vid.src) { vid2.src = vid.src; await waitEv(vid2, 'loadedmetadata', 8000); }
   try {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       srcNode = audioCtx.createMediaElementSource(vid);
       speakerGain = audioCtx.createGain(); srcNode.connect(speakerGain); speakerGain.connect(audioCtx.destination);
     }
+    if (!src2) src2 = audioCtx.createMediaElementSource(vid2);
     await audioCtx.resume();
-    var dest = audioCtx.createMediaStreamDestination(); srcNode.connect(dest);
+    dest = audioCtx.createMediaStreamDestination();
+    srcNode.connect(dest); src2.connect(dest);
     dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
     speakerGain.gain.value = 0;
   } catch (e) { console.warn('sem áudio', e); }
   const mime = pickMime();
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: outH >= 1080 ? 8e6 : outH >= 720 ? 4e6 : 2e6 } : undefined);
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: outH >= 1080 ? 8e6 : outH >= 720 ? 4e6 : 2e6, audioBitsPerSecond: 160000 } : undefined);
   const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   exporting = true; expCancel = false; exportTextCache.clear();
   $('expOpts').style.display = 'none'; $('expRun').style.display = ''; $('expClose').textContent = 'Cancelar';
   const st = clipStarts(), tot = st[st.length - 1];
   const rect = { x: 0, y: 0, w: outW, h: outH };
-  let started = false;
+  const clips = P.seq.map(q => scene(q.scene)).filter(Boolean);
+  const players = [vid, vid2];
+  const prepare = async (p, k) => {
+    if (k >= clips.length) return;
+    p.pause(); p.currentTime = clips[k].start / 1000;
+    await waitEv(p, 'seeked', 6000);
+  };
+  let stopTick = null;
   try {
-    for (let i = 0; i < P.seq.length && !expCancel; i++) {
-      const sc = scene(P.seq[i].scene); if (!sc) continue;
+    const ready = [prepare(players[0], 0), prepare(players[1], 1)];
+    await ready[0];
+    rec.start(1000);
+    for (let i = 0; i < clips.length && !expCancel; i++) {
+      const p = players[i % 2], sc = clips[i];
+      await ready[i];
       ci = i;
-      vid.currentTime = sc.start / 1000; await waitEv(vid, 'seeked');
-      if (!started) { rec.start(1000); started = true; } else rec.resume();
-      await vid.play();
+      await p.play();
       await new Promise(res => {
+        let finished = false;
         const frame = () => {
-          const t = vid.currentTime * 1000;
+          if (finished) return;
+          const t = p.currentTime * 1000;
           const g = st[i] + clamp(t - sc.start, 0, sc.end - sc.start);
-          cx.fillStyle = '#000'; cx.fillRect(0, 0, outW, outH);
-          cx.drawImage(vid, 0, 0, outW, outH);
+          cx.drawImage(p, 0, 0, outW, outH);
           drawTexts(cx, rect, g, true);
           $('expBar').style.width = (100 * g / tot).toFixed(1) + '%';
           $('expLbl').textContent = `Gravando… ${Math.floor(100 * g / tot)}% (${fmt(g, false)} de ${fmt(tot, false)})`;
-          if (expCancel || t >= sc.end - 20 || vid.ended) { vid.pause(); rec.pause(); res(); return; }
-          requestAnimationFrame(frame);
+          if (expCancel || t >= sc.end - 20 || p.ended) { finished = true; p.pause(); res(); }
         };
-        requestAnimationFrame(frame);
+        stopTick = makeTicker(30, frame);
       });
+      stopTick(); stopTick = null;
+      // este player já se prepara para a cena i+2 enquanto o outro toca a i+1
+      ready[i + 2] = prepare(p, i + 2);
     }
-    if (!started) throw new Error('nada gravado');
     const done = new Promise(r => rec.onstop = r); rec.stop(); await done;
     if (expCancel) { toast('Exportação cancelada'); return; }
     const type = (mime || 'video/webm').split(';')[0];
     const blob = new Blob(chunks, { type });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.${type.includes('mp4') ? 'mp4' : 'webm'}`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    $('expLbl').textContent = `Pronto! Arquivo baixado: ${a.download}` + (type.includes('webm') ? ' (WebM abre no VLC, Chrome e YouTube).' : '');
+    const name = `${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+    downloadBlob(blob, name);
+    $('expLbl').textContent = `Pronto! Arquivo baixado: ${name}` + (type.includes('webm') ? ' (WebM abre no VLC, Chrome e YouTube).' : '');
     $('expBar').style.width = '100%';
   } catch (e) {
     alert('Erro na exportação: ' + e.message);
   } finally {
+    if (stopTick) stopTick();
     exporting = false; if (speakerGain) speakerGain.gain.value = 1;
-    try { if (dest) srcNode.disconnect(dest); } catch (e) {}
+    try { if (dest) { srcNode.disconnect(dest); src2.disconnect(dest); } } catch (e) {}
+    vid2 && vid2.pause();
     $('expClose').textContent = 'Fechar';
     seekG(0);
   }
+}
+function downloadBlob(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 120000);
+}
+
+// ---------------------------------------------------------------- ZIP simples (sem compressão) para o pacote do ffmpeg
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) { // files: [{name, data: Uint8Array}]
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, 0, true); h.setUint16(12, 0x21, true); h.setUint32(14, crc, true); h.setUint32(18, sz, true); h.setUint32(22, sz, true);
+    h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, f.data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+    c.setUint16(12, 0, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true); c.setUint32(20, sz, true); c.setUint32(24, sz, true);
+    c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + sz;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
+}
+const canvasPng = c => new Promise(r => c.toBlob(b => b.arrayBuffer().then(a => r(new Uint8Array(a))), 'image/png'));
+const batSafe = s => String(s).replace(/[&|<>^%!"]/g, '');
+
+/**
+ * Exportação rápida COM textos pelo ffmpeg: cada texto vira um PNG transparente do tamanho do vídeo
+ * e o .bat sobrepõe no tempo certo (com fade de entrada/saída). Corte exato, x264 veryfast.
+ */
+async function ffmpegZip(h) {
+  const outH = Math.min(h, P.h) & ~1, outW = Math.round(P.w * outH / P.h) & ~1;
+  $('expOpts').style.display = 'none'; $('expRun').style.display = '';
+  $('expLbl').textContent = 'Preparando as imagens dos textos…'; $('expBar').style.width = '10%';
+  const film = P.fileName || 'filme.mp4';
+  const st = clipStarts();
+  const files = [];
+  const L = ['@echo off', 'chcp 65001 >nul', 'cd /d "%~dp0"', `set "FILME=${batSafe(film)}"`, '',
+    'echo ================================================', `echo  Leve Editor - ${batSafe(P.name)} (${outH}p com textos)`,
+    'echo  Deixe esta pasta, o ffmpeg.exe e o filme JUNTOS.', 'echo ================================================',
+    'where ffmpeg >nul 2>nul || if not exist ffmpeg.exe ( echo Falta o ffmpeg.exe nesta pasta. Baixe em https://www.gyan.dev/ffmpeg/builds/ & pause & exit /b )',
+    'if not exist "%FILME%" ( echo Nao achei o filme "%FILME%" nesta pasta. & pause & exit /b )',
+    'if exist lista_leve.txt del lista_leve.txt', ''];
+  const base = `scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+  for (let i = 0; i < P.seq.length; i++) {
+    const sc = scene(P.seq[i].scene); if (!sc) continue;
+    const cs = st[i], ce = st[i + 1], D = (ce - cs) / 1000;
+    const part = `parte_${pad(i + 1, 3)}.mp4`;
+    const inputs = [], filt = [`[0:v]${base}[b0]`];
+    let last = 'b0', k = 0;
+    for (const t of P.texts) {
+      if (!t.text.trim() || t.start >= ce || t.start + t.dur <= cs) continue;
+      k++;
+      const c = document.createElement('canvas'); c.width = outW; c.height = outH;
+      const g = c.getContext('2d');
+      const bm = renderText(t, outH);
+      g.translate(t.x * outW, t.y * outH); g.rotate(t.rot * Math.PI / 180);
+      g.drawImage(bm, -bm.width / 2, -bm.height / 2);
+      const png = `textos/c${pad(i + 1, 3)}_t${k}.png`;
+      files.push({ name: png, data: await canvasPng(c) });
+      const a = Math.max(0, t.start - cs) / 1000, b = (Math.min(ce, t.start + t.dur) - cs) / 1000;
+      const fd = Math.min(.45, t.dur / 3000);
+      let tf = 'format=rgba';
+      if (t.animIn && t.start >= cs) tf += `,fade=t=in:st=${a.toFixed(3)}:d=${fd.toFixed(3)}:alpha=1`;
+      if (t.animOut && t.start + t.dur <= ce) tf += `,fade=t=out:st=${Math.max(a, b - fd).toFixed(3)}:d=${fd.toFixed(3)}:alpha=1`;
+      inputs.push(`-loop 1 -t ${D.toFixed(3)} -i "${png}"`);
+      filt.push(`[${k}:v]${tf}[t${k}]`, `[${last}][t${k}]overlay=0:0:enable='between(t,${a.toFixed(3)},${b.toFixed(3)})'[o${k}]`);
+      last = `o${k}`;
+    }
+    $('expBar').style.width = (10 + 80 * (i + 1) / P.seq.length).toFixed(0) + '%';
+    L.push(`echo Cena ${i + 1} de ${P.seq.length}: ${batSafe(sc.name)}`);
+    L.push(`ffmpeg -hide_banner -loglevel error -stats -y -ss ${(sc.start / 1000).toFixed(3)} -t ${D.toFixed(3)} -i "%FILME%" ${inputs.join(' ')} ` +
+      `-filter_complex "${filt.join(';')}" -map "[${last}]" -map 0:a:0? -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p ` +
+      `-c:a aac -b:a 160k -ar 48000 -ac 2 -shortest ${part}`);
+    L.push(`if errorlevel 1 ( echo ERRO na cena ${i + 1}. & pause & exit /b )`);
+    L.push(`echo file '${part}'>> lista_leve.txt`);
+  }
+  const out = `${P.name.replace(/[\\/:*?"<>|&%^!]/g, '_')}_${outH}p.mp4`;
+  L.push('', 'echo Juntando as cenas...', `ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i lista_leve.txt -c copy "${out}"`,
+    'del parte_*.mp4 lista_leve.txt', 'echo.', `echo Pronto! Video: ${out}`, 'pause');
+  files.unshift({ name: 'EXPORTAR.bat', data: new TextEncoder().encode(L.join('\r\n')) });
+  files.push({ name: 'LEIA-ME.txt', data: new TextEncoder().encode(
+    'Leve Editor - exportar com ffmpeg\r\n\r\n1. Extraia este .zip numa pasta.\r\n2. Coloque nessa pasta o filme "' + film + '" e o ffmpeg.exe\r\n   (baixe em https://www.gyan.dev/ffmpeg/builds/ - pasta bin do zip).\r\n3. De dois cliques em EXPORTAR.bat.\r\n\r\nAnimacoes de entrada/saida viram fade (aparecer/sumir).\r\n') });
+  downloadBlob(makeZip(files), `exportar_${P.name.replace(/[\\/:*?"<>|]/g, '_')}_${outH}p.zip`);
+  $('expBar').style.width = '100%';
+  $('expLbl').textContent = 'Pacote baixado! Extraia, coloque o filme e o ffmpeg.exe na pasta e dê dois cliques em EXPORTAR.bat.';
 }
 function downloadScript(kind) {
   const film = P.fileName || 'filme.mp4';
@@ -1406,7 +1538,8 @@ function downloadScript(kind) {
     const s = scene(q.scene); if (!s) return;
     const ss = (s.start / 1000).toFixed(3), d = ((s.end - s.start) / 1000).toFixed(3), part = `parte_${pad(i + 1, 3)}.mp4`;
     lines.push(`echo Cena ${i + 1} de ${P.seq.length}: ${s.name.replace(/[&|<>^%]/g, '')}`);
-    if (kind === 'copy') lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c copy -avoid_negative_ts make_zero ${part}`);
+    // -noaccurate_seek: vídeo e áudio começam juntos no mesmo quadro-chave (sem dessincronizar)
+    if (kind === 'copy') lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -noaccurate_seek -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c copy -avoid_negative_ts make_zero ${part}`);
     else lines.push(`ffmpeg -hide_banner -loglevel error -y -ss ${ss} -i "%FILME%" -t ${d} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -c:a aac -b:a 160k -ar 48000 ${part}`);
     lines.push(`echo file '${part}'>> lista_leve.txt`);
   });
@@ -1432,8 +1565,8 @@ function loadProjectText(txt) {
     const p = normalize(JSON.parse(txt));
     P = p; undoStack = []; redoStack = []; lastSnap = null; textCache.clear(); selClip = -1; selText = null; inMs = outMs = -1; editingSceneId = null;
     commit(); afterProjectChange();
-    if (!videoReady || (P.fileName && vid.src && !videoURL)) askFilm();
-    else if (P.fileName) toast(`Projeto aberto. Se o filme não for "${P.fileName}", abra o filme certo.`);
+    if (!videoReady) askFilm();
+    else if (P.fileName && P.fileName !== currentFile) { askFilm(); toast(`Abra o filme "${P.fileName}" para este projeto`); }
   } catch (e) { alert('Arquivo de projeto inválido.'); }
 }
 function askFilm() {

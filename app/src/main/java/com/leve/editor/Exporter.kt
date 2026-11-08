@@ -19,6 +19,7 @@ import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
@@ -74,12 +75,14 @@ class Exporter(private val ctx: Context, private val project: Project, private v
     private val main = Handler(Looper.getMainLooper())
     private var transformer: Transformer? = null
     private var poll: Runnable? = null
+    @Volatile private var cancelled = false
     var running = false
         private set
 
     /**
-     * [fast] = sem recompressão: copia o vídeo como está (segundos), mas cada corte começa
-     * no keyframe mais próximo e não tem texto. Senão recodifica (corte exato + texto).
+     * [fast] = sem recompressão (cópia direta, segundos; cada cena começa no quadro-chave anterior, sem texto).
+     * Senão: cada cena é exportada separada (corte exato + textos) e depois as partes são juntadas
+     * sem recodificar, com o áudio de cada parte cortado no tamanho do vídeo (sem dessincronizar).
      */
     fun start(
         height: Int,
@@ -89,55 +92,70 @@ class Exporter(private val ctx: Context, private val project: Project, private v
         onDone: (File) -> Unit,
         onError: (String) -> Unit
     ) {
-        // limpa exports antigos
-        ctx.cacheDir.listFiles { f -> f.name.startsWith("export_") }?.forEach { it.delete() }
+        ctx.cacheDir.listFiles { f -> f.name.startsWith("export_") || f.name.startsWith("part_") }?.forEach { it.delete() }
+        cancelled = false
+        running = true
+        val out = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
+        val clips = project.seq.mapNotNull { s -> project.scene(s.sceneId)?.let { it.startMs to it.endMs } }
+        if (clips.isEmpty()) { running = false; onError("A montagem está vazia."); return }
 
-        // tamanho final (mantém proporção do filme, números pares)
+        if (fast) {
+            Thread {
+                try {
+                    Mp4Tools.fastCopy(ctx, uri, clips, out, removeAudio, { cancelled }) { p -> main.post { onProgress(p) } }
+                    main.post { running = false; if (!cancelled) onDone(out) }
+                } catch (e: Mp4Tools.Cancelled) {
+                    out.delete(); main.post { running = false }
+                } catch (e: Exception) {
+                    out.delete()
+                    main.post { running = false; if (!cancelled) onError("Cópia rápida falhou: ${e.message}\nUse 480p/720p.") }
+                }
+            }.start()
+            return
+        }
+
+        // ---- modo exato: uma parte por cena ----
         val outH = minOf(height, project.videoH).let { it - it % 2 }
         val outW = (project.videoW.toLong() * outH / project.videoH).toInt().let { it - it % 2 }
-
+        val fps = Mp4Tools.frameRate(ctx, uri)
         val starts = project.clipStarts()
-        val items = project.seq.mapIndexedNotNull { i, s ->
-            val sc = project.scene(s.sceneId) ?: return@mapIndexedNotNull null
+        val total = starts.last().coerceAtLeast(1)
+        val parts = ArrayList<File>()
+        val bitrate = when {
+            outH <= 480 -> 1_500_000
+            outH <= 720 -> 3_000_000
+            else -> 6_000_000
+        }
+
+        fun partItem(i: Int): EditedMediaItem? {
+            val sc = project.scene(project.seq[i].sceneId) ?: return null
             val mi = MediaItem.Builder()
                 .setUri(uri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs(sc.startMs)
                         .setEndPositionMs(sc.endMs)
-                        .setStartsAtKeyFrame(fast)
                         .build()
                 )
                 .build()
-            if (fast) {
-                return@mapIndexedNotNull EditedMediaItem.Builder(mi).setRemoveAudio(removeAudio).build()
-            }
-            val video = mutableListOf<Effect>(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT))
-            // textos que aparecem durante essa cena
+            val video = mutableListOf<Effect>()
+            // filme com mais de 30 quadros/s: exporta em 30 (metade do trabalho)
+            if (fps > 31f) video.add(FrameDropEffect.createDefaultFrameDropEffect(30f))
+            video.add(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT))
             val cs = starts[i]; val ce = starts[i + 1]
-            val overlays = project.texts
+            val overlays: List<TextureOverlay> = project.texts
                 .filter { it.text.isNotBlank() && it.startMs < ce && it.endMs > cs }
-                .map { TimedTextOverlay(it, cs, outH) as TextureOverlay }
+                .map { TimedTextOverlay(it, cs, outH) }
             if (overlays.isNotEmpty()) video.add(OverlayEffect(ImmutableList.copyOf(overlays)))
-            EditedMediaItem.Builder(mi)
+            return EditedMediaItem.Builder(mi)
                 .setEffects(Effects(emptyList(), video))
                 .setRemoveAudio(removeAudio)
                 .build()
         }
-        if (items.isEmpty()) { onError("A montagem está vazia."); return }
 
-        val composition = Composition.Builder(EditedMediaItemSequence(items)).build()
-        val out = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
-
-        val builder = Transformer.Builder(ctx)
-        if (!fast) {
-            // bitrate na medida: arquivo menor e codificador de hardware trabalhando folgado
-            val bitrate = when {
-                outH <= 480 -> 1_500_000
-                outH <= 720 -> 3_000_000
-                else -> 6_000_000
-            }
-            builder.setVideoMimeType(MimeTypes.VIDEO_H264)
+        fun buildTransformer(listener: Transformer.Listener): Transformer =
+            Transformer.Builder(ctx)
+                .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .setEncoderFactory(
                     DefaultEncoderFactory.Builder(ctx)
@@ -145,48 +163,103 @@ class Exporter(private val ctx: Context, private val project: Project, private v
                         .setEnableFallback(true)
                         .build()
                 )
+                .addListener(listener)
+                .build()
+
+        val holder = ProgressHolder()
+        var current = 0
+
+        fun finishAll() {
+            onProgress(99)
+            Thread {
+                try {
+                    if (parts.size == 1) {
+                        parts[0].renameTo(out)
+                    } else if (Mp4Tools.sameFormat(parts)) {
+                        Mp4Tools.concat(parts, out) { cancelled }
+                    } else {
+                        throw IllegalStateException("partes com formatos diferentes")
+                    }
+                    parts.forEach { it.delete() }
+                    main.post { running = false; if (!cancelled) onDone(out) }
+                } catch (e: Exception) {
+                    // plano B: deixa o Transformer juntar as partes
+                    main.post { if (!cancelled) joinWithTransformer(parts, out, onDone, onError) else running = false }
+                }
+            }.start()
         }
-        val t = builder
-            .addListener(object : Transformer.Listener {
+
+        fun next() {
+            if (cancelled) return
+            if (current >= project.seq.size) { stopPoll(); finishAll(); return }
+            val item = partItem(current)
+            if (item == null) { current++; next(); return }
+            val partFile = File(ctx.cacheDir, "part_${current}.mp4")
+            val t = buildTransformer(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    finish()
-                    onDone(out)
+                    parts.add(partFile)
+                    current++
+                    next()
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
-                    finish()
-                    out.delete()
+                    stopPoll()
+                    running = false
+                    transformer = null
+                    parts.forEach { it.delete() }; partFile.delete()
                     val cause = exportException.cause?.message ?: exportException.message ?: ""
-                    onError("${exportException.errorCodeName}\n$cause")
+                    if (!cancelled) onError("Cena ${current + 1}: ${exportException.errorCodeName}\n$cause")
                 }
             })
-            .build()
-        transformer = t
-        running = true
-        t.start(composition, out.absolutePath)
+            transformer = t
+            t.start(item, partFile.absolutePath)
+        }
 
-        val holder = ProgressHolder()
         val r = object : Runnable {
             override fun run() {
-                val tr = transformer ?: return
-                if (tr.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) onProgress(holder.progress)
+                val tr = transformer
+                if (tr != null && current < project.seq.size) {
+                    val p = if (tr.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) holder.progress else 0
+                    val done = starts[current] + (starts[current + 1] - starts[current]) * p / 100
+                    onProgress((done * 98 / total).toInt())
+                }
                 main.postDelayed(this, 400)
             }
         }
         poll = r
         main.postDelayed(r, 400)
+        next()
     }
 
-    private fun finish() {
-        running = false
+    /** Plano B: junta as partes com o Transformer (recodifica se precisar). */
+    private fun joinWithTransformer(parts: List<File>, out: File, onDone: (File) -> Unit, onError: (String) -> Unit) {
+        val items = parts.map { EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(it))).build() }
+        val t = Transformer.Builder(ctx)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    running = false; parts.forEach { it.delete() }; onDone(out)
+                }
+                override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                    running = false; parts.forEach { it.delete() }
+                    onError("Juntar as cenas falhou: ${exportException.errorCodeName}")
+                }
+            })
+            .build()
+        transformer = t
+        t.start(Composition.Builder(EditedMediaItemSequence(items)).build(), out.absolutePath)
+    }
+
+    private fun stopPoll() {
         poll?.let { main.removeCallbacks(it) }
         poll = null
-        transformer = null
     }
 
     fun cancel() {
+        cancelled = true
         transformer?.cancel()
-        finish()
+        transformer = null
+        stopPoll()
+        running = false
     }
 
     companion object {
