@@ -40,6 +40,11 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Não achei um seletor de arquivos", Toast.LENGTH_LONG).show()
             }
         }
+        findViewById<TextView>(R.id.tvUpdate).apply {
+            text = "Versão build ${Updater.currentBuild(this@MainActivity)}  •  Verificar atualização"
+            setOnClickListener { Updater.check(this@MainActivity, manual = true) }
+        }
+        Updater.check(this, manual = false)
     }
 
     override fun onResume() {

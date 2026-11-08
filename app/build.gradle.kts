@@ -11,8 +11,9 @@ android {
         applicationId = "com.leve.editor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        val build = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.$build"
     }
 
     signingConfigs {
