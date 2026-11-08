@@ -2,8 +2,7 @@ package com.leve.editor
 
 import android.content.ContentValues
 import android.content.Context
-import android.graphics.Paint
-import android.graphics.Typeface
+import android.graphics.Bitmap
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -11,12 +10,6 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.text.Spannable
-import android.text.SpannableString
-import android.text.style.AbsoluteSizeSpan
-import android.text.style.BackgroundColorSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
 import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
@@ -25,7 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.Presentation
-import androidx.media3.effect.TextOverlay
+import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
@@ -40,52 +33,38 @@ import androidx.media3.transformer.Transformer
 import com.google.common.collect.ImmutableList
 import java.io.File
 
-/** Texto desenhado em cima do vídeo exportado. Some depois de [SeqItem.secs] segundos. */
+/**
+ * Texto da montagem desenhado no vídeo exportado. Usa o mesmo [TextRenderer] e as mesmas
+ * animações da prévia. [clipStartMs] = onde essa cena começa no vídeo final.
+ */
 @UnstableApi
-class SceneTextOverlay(item: SeqItem, frameW: Int, frameH: Int) : TextOverlay() {
-    private val text: SpannableString
-    private val shown: OverlaySettings
-    private val hidden: OverlaySettings
-    private val limitUs = if (item.secs <= 0) Long.MAX_VALUE else item.secs * 1_000_000L
+class TimedTextOverlay(
+    private val t: TextItem,
+    private val clipStartMs: Long,
+    private val frameH: Int
+) : BitmapOverlay() {
+    private var bmp: Bitmap? = null
     private var firstUs = C.TIME_UNSET
+    private val st = TextAnim.State()
+    private val hidden = OverlaySettings.Builder().setAlphaScale(0f).build()
 
-    init {
-        val str = if (item.bg) "  ${item.text}  " else item.text
-        var px = (frameH * TextStyle.sizeFactor(item.size)).toInt().coerceAtLeast(12)
-        // diminui se o texto não couber na largura
-        val paint = Paint().apply { textSize = px.toFloat(); typeface = Typeface.DEFAULT_BOLD }
-        val wText = paint.measureText(str)
-        if (wText > frameW * 0.94f) px = (px * frameW * 0.94f / wText).toInt().coerceAtLeast(10)
-
-        text = SpannableString(str)
-        val n = str.length
-        val f = Spannable.SPAN_INCLUSIVE_EXCLUSIVE
-        text.setSpan(AbsoluteSizeSpan(px), 0, n, f)
-        text.setSpan(ForegroundColorSpan(item.color), 0, n, f)
-        text.setSpan(StyleSpan(Typeface.BOLD), 0, n, f)
-        if (item.bg) text.setSpan(BackgroundColorSpan(TextStyle.BG_COLOR), 0, n, f)
-
-        val (bgY, ovY) = when (item.pos) {
-            TextStyle.POS_TOP -> 0.88f to 1f
-            TextStyle.POS_CENTER -> 0f to 0f
-            else -> -0.88f to -1f
-        }
-        shown = OverlaySettings.Builder()
-            .setBackgroundFrameAnchor(0f, bgY)
-            .setOverlayFrameAnchor(0f, ovY)
-            .build()
-        hidden = OverlaySettings.Builder()
-            .setBackgroundFrameAnchor(0f, bgY)
-            .setOverlayFrameAnchor(0f, ovY)
-            .setAlphaScale(0f)
-            .build()
+    override fun getBitmap(presentationTimeUs: Long): Bitmap {
+        bmp?.let { return it }
+        return TextRenderer.render(t, frameH).also { bmp = it }
     }
-
-    override fun getText(presentationTimeUs: Long): SpannableString = text
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         if (firstUs == C.TIME_UNSET) firstUs = presentationTimeUs
-        return if (presentationTimeUs - firstUs < limitUs) shown else hidden
+        val g = clipStartMs + (presentationTimeUs - firstUs) / 1000
+        val s = TextAnim.state(t, g, st) ?: return hidden
+        val nx = (t.x + s.dx) * 2f - 1f
+        val ny = 1f - (t.y + s.dy) * 2f
+        return OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(nx, ny)
+            .setScale(s.scale, s.scale)
+            .setRotationDegrees(-(t.rot + s.rot))
+            .setAlphaScale(s.alpha.coerceIn(0f, 1f))
+            .build()
     }
 }
 
@@ -117,8 +96,9 @@ class Exporter(private val ctx: Context, private val project: Project, private v
         val outH = minOf(height, project.videoH).let { it - it % 2 }
         val outW = (project.videoW.toLong() * outH / project.videoH).toInt().let { it - it % 2 }
 
-        val items = project.seq.mapNotNull { s ->
-            val sc = project.scene(s.sceneId) ?: return@mapNotNull null
+        val starts = project.clipStarts()
+        val items = project.seq.mapIndexedNotNull { i, s ->
+            val sc = project.scene(s.sceneId) ?: return@mapIndexedNotNull null
             val mi = MediaItem.Builder()
                 .setUri(uri)
                 .setClippingConfiguration(
@@ -130,12 +110,15 @@ class Exporter(private val ctx: Context, private val project: Project, private v
                 )
                 .build()
             if (fast) {
-                return@mapNotNull EditedMediaItem.Builder(mi).setRemoveAudio(removeAudio).build()
+                return@mapIndexedNotNull EditedMediaItem.Builder(mi).setRemoveAudio(removeAudio).build()
             }
             val video = mutableListOf<Effect>(Presentation.createForWidthAndHeight(outW, outH, Presentation.LAYOUT_SCALE_TO_FIT))
-            if (s.text.isNotBlank()) {
-                video.add(OverlayEffect(ImmutableList.of<TextureOverlay>(SceneTextOverlay(s, outW, outH))))
-            }
+            // textos que aparecem durante essa cena
+            val cs = starts[i]; val ce = starts[i + 1]
+            val overlays = project.texts
+                .filter { it.text.isNotBlank() && it.startMs < ce && it.endMs > cs }
+                .map { TimedTextOverlay(it, cs, outH) as TextureOverlay }
+            if (overlays.isNotEmpty()) video.add(OverlayEffect(ImmutableList.copyOf(overlays)))
             EditedMediaItem.Builder(mi)
                 .setEffects(Effects(emptyList(), video))
                 .setRemoveAudio(removeAudio)

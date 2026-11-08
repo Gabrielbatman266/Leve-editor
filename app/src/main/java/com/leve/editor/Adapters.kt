@@ -115,11 +115,14 @@ class SeqAdapter(
         val ctx = h.itemView.context
         h.num.text = "${i + 1}"
         h.name.text = s?.name ?: "(cena apagada)"
-        if (item.text.isNotBlank()) {
-            h.text.text = "T  “${item.text}”"
+        val st = project.clipStarts()
+        val cs = st[i]; val ce = st[i + 1]
+        val n = project.texts.count { it.startMs < ce && it.endMs > cs }
+        if (n > 0) {
+            h.text.text = "${Fmt.dur(s?.durMs ?: 0)} • T $n texto" + (if (n > 1) "s" else "")
             h.text.setTextColor(0xFF22D3EE.toInt())
         } else {
-            h.text.text = "${Fmt.dur(s?.durMs ?: 0)} • toque para pôr texto"
+            h.text.text = "${Fmt.dur(s?.durMs ?: 0)} • toque para abrir na montagem"
             h.text.setTextColor(0xFF9A9AA5.toInt())
         }
         h.thumb.setImageBitmap(s?.let { ThumbCache.get(Store.thumbFile(ctx, project.id, it.id)) })

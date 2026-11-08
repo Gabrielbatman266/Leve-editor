@@ -81,8 +81,16 @@ class Project(
     var lastPosMs: Long = 0,
     var updated: Long = System.currentTimeMillis(),
     val scenes: MutableList<Scene> = mutableListOf(),
-    val seq: MutableList<SeqItem> = mutableListOf()
+    val seq: MutableList<SeqItem> = mutableListOf(),
+    val texts: MutableList<TextItem> = mutableListOf()
 ) {
+    /** Início de cada cena no vídeo final (ms) — tamanho = seq.size + 1 (último = total). */
+    fun clipStarts(): LongArray {
+        val a = LongArray(seq.size + 1)
+        for (i in seq.indices) a[i + 1] = a[i] + (scene(seq[i].sceneId)?.durMs ?: 0L)
+        return a
+    }
+
     fun scene(id: String): Scene? = scenes.firstOrNull { it.id == id }
     fun sortedScenes(): List<Scene> = scenes.sortedBy { it.startMs }
     fun seqDurationMs(): Long = seq.sumOf { scene(it.sceneId)?.durMs ?: 0L }
@@ -93,6 +101,7 @@ class Project(
         .put("last", lastPosMs).put("updated", updated)
         .put("scenes", JSONArray().apply { scenes.forEach { put(it.toJson()) } })
         .put("seq", JSONArray().apply { seq.forEach { put(it.toJson()) } })
+        .put("texts", JSONArray().apply { texts.forEach { put(it.toJson()) } })
 
     companion object {
         fun from(o: JSONObject): Project {
@@ -105,7 +114,28 @@ class Project(
             o.optJSONArray("seq")?.let { a -> for (i in 0 until a.length()) p.seq.add(SeqItem.from(a.getJSONObject(i))) }
             // limpa itens que apontam para cenas apagadas
             p.seq.removeAll { s -> p.scene(s.sceneId) == null }
+            val ta = o.optJSONArray("texts")
+            if (ta != null) {
+                for (i in 0 until ta.length()) p.texts.add(TextItem.from(ta.getJSONObject(i)))
+            } else migrateOldTexts(p)
             return p
+        }
+
+        /** Versões antigas guardavam o texto dentro de cada cena da montagem. */
+        private fun migrateOldTexts(p: Project) {
+            val starts = p.clipStarts()
+            p.seq.forEachIndexed { i, s ->
+                if (s.text.isBlank()) return@forEachIndexed
+                val len = starts[i + 1] - starts[i]
+                val dur = if (s.secs <= 0) len else minOf(len, s.secs * 1000L)
+                val t = TextItem(newId(), s.text, starts[i], maxOf(300L, dur))
+                t.y = when (s.pos) { TextStyle.POS_TOP -> 0.12f; TextStyle.POS_CENTER -> 0.5f; else -> 0.86f }
+                t.scale = when (s.size) { 0 -> 0.75f; 2 -> 1.6f; else -> 1.1f }
+                t.color = s.color
+                if (s.bg) t.bgAlpha = 0.6f else t.shadow = 0.6f
+                p.texts.add(t)
+                s.text = ""
+            }
         }
     }
 }

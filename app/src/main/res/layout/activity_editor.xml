@@ -436,7 +436,7 @@
                     android:layout_gravity="center"
                     android:gravity="center"
                     android:padding="24dp"
-                    android:text="A montagem está vazia.\nNa aba Cenas, toque no + para colocar a cena aqui.\nSegure e arraste (≡) para mudar a ordem. Toque na cena para pôr texto."
+                    android:text="A montagem está vazia.\nNa aba Cenas, toque no + para colocar a cena aqui.\nSegure e arraste (≡) para mudar a ordem.\nAbra o Editor de montagem para ver o vídeo, pôr textos e organizar estilo CapCut."
                     android:textColor="@color/sub" />
             </FrameLayout>
 
@@ -452,7 +452,7 @@
                     android:layout_width="0dp"
                     android:layout_height="56dp"
                     android:layout_weight="1"
-                    android:text="▶  Pré-visualizar" />
+                    android:text="🎬  Editor de montagem" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnExport"

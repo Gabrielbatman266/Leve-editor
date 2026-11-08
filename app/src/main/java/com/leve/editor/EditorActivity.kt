@@ -82,7 +82,6 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     private var stopAtMs = -1L
     private var lastSeekAt = 0L
     private var fullPosBeforeSeq = 0L
-    private var exporter: Exporter? = null
 
     // prévia travada no corte (estilo CapCut)
     private var lockOn = true
@@ -97,7 +96,7 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     private fun hasCut() = inMs >= 0 && outMs > inMs
     private fun isLocked() = lockOn && hasCut() && !seqMode
 
-    private val askStorage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { askExport() }
+    private val askStorage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { exportFlow.ask() }
 
     // ---------------------------------------------------------------- ciclo de vida
 
@@ -163,12 +162,22 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     override fun onResume() {
         super.onResume()
         handler.post(ticker)
+        if (montageOpened) {
+            // volta do editor de montagem: pega a ordem e os textos novos
+            montageOpened = false
+            Store.load(this, project.id)?.let { fresh ->
+                project.seq.clear(); project.seq.addAll(fresh.seq)
+                project.texts.clear(); project.texts.addAll(fresh.texts)
+                project.name = fresh.name; tvTitle.text = fresh.name
+            }
+            refreshLists()
+        }
     }
 
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(ticker)
-        if (exporter?.running != true) player.pause()
+        if (!exportFlow.running) player.pause()
         if (!seqMode) project.lastPosMs = player.currentPosition
         save()
     }
@@ -177,7 +186,7 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         super.onDestroy()
         if (!::project.isInitialized) return
         handler.removeCallbacksAndMessages(null)
-        exporter?.cancel()
+        exportFlow.shutdown()
         thumbs?.release()
         player.release()
         io.shutdown()
@@ -551,7 +560,7 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     private fun setupSeq() {
         val rv = findViewById<RecyclerView>(R.id.rvSeq)
         seqAdapter = SeqAdapter(project,
-            onTap = { i -> editText(i) },
+            onTap = { i -> openMontage(i) },
             onDelete = { i ->
                 if (seqMode) stopSeqPreview()
                 project.seq.removeAt(i)
@@ -583,36 +592,33 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         })
         touchHelper.attachToRecyclerView(rv)
 
-        btnPreviewSeq.setOnClickListener { if (seqMode) stopSeqPreview() else startSeqPreview() }
+        btnPreviewSeq.setOnClickListener { openMontage() }
         findViewById<View>(R.id.btnExport).setOnClickListener { exportClicked() }
         findViewById<View>(R.id.btnAutoText).setOnClickListener { autoTitles() }
-    }
-
-    private fun editText(i: Int) {
-        val item = project.seq.getOrNull(i) ?: return
-        val name = project.scene(item.sceneId)?.name ?: ""
-        Dialogs.text(this, item, name, i) {
-            save(); refreshLists()
-        }
     }
 
     private fun autoTitles() {
         if (project.seq.isEmpty()) { toast("A montagem está vazia"); return }
         val opts = arrayOf("Cena 1 – Nome da cena", "Só o nome da cena", "Só o número (Cena 1)", "Tirar todos os textos")
         MaterialAlertDialogBuilder(this)
-            .setTitle("Títulos automáticos em todas as cenas")
+            .setTitle("Títulos automáticos (no começo de cada cena)")
             .setItems(opts) { _, which ->
-                project.seq.forEachIndexed { i, it ->
-                    val name = project.scene(it.sceneId)?.name ?: ""
-                    it.text = when (which) {
-                        0 -> "Cena ${i + 1} – $name"
-                        1 -> name
-                        2 -> "Cena ${i + 1}"
-                        else -> ""
+                project.texts.clear()
+                if (which != 3) {
+                    val st = project.clipStarts()
+                    project.seq.forEachIndexed { i, it ->
+                        val name = project.scene(it.sceneId)?.name ?: ""
+                        val txt = when (which) { 0 -> "Cena ${i + 1} – $name"; 1 -> name; else -> "Cena ${i + 1}" }
+                        val len = st[i + 1] - st[i]
+                        val t = TextItem(newId(), txt, st[i], minOf(3000L, len).coerceAtLeast(300L))
+                        t.y = 0.86f
+                        TextPresets.ALL[7].apply(t)   // "Legenda"
+                        t.animIn = 1; t.animOut = 1
+                        project.texts.add(t)
                     }
                 }
-                if (seqMode) stopSeqPreview()
                 save(); refreshLists()
+                toast(if (which == 3) "Textos removidos" else "Títulos criados — abra o editor de montagem para ajustar")
             }
             .setNegativeButton("Cancelar", null)
             .show()
@@ -678,132 +684,30 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
 
     // ---------------------------------------------------------------- exportar
 
+    private val exportFlow by lazy {
+        ExportFlow(this, project, uri) { if (seqMode) stopSeqPreview(); player.pause() }
+    }
+
     private fun exportClicked() {
         if (project.seq.isEmpty()) { toast("A montagem está vazia"); return }
         if (Build.VERSION.SDK_INT < 29 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
         ) {
             askStorage.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        } else askExport()
+        } else exportFlow.ask()
     }
 
-    private fun askExport() {
-        val hasText = project.seq.any { it.text.isNotBlank() }
-        val opts = arrayOf(
-            "⚡ Rápida – sem recompressão (segundos)\nCorte pode variar ~1s, sem textos",
-            "480p – leve",
-            "720p – recomendado",
-            "1080p – melhor qualidade"
-        )
-        val heights = intArrayOf(0, 480, 720, 1080)
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Exportar ${project.seq.size} cenas • ${Fmt.time(project.seqDurationMs(), false)}")
-            .setItems(opts) { _, w ->
-                if (w == 0) {
-                    if (hasText) Dialogs.confirm(this, "Modo rápido sem textos",
-                        "No modo rápido o vídeo é copiado sem recompressão, então os textos não aparecem e cada cena começa no quadro-chave mais próximo (pode variar ~1s).\n\nPara ter os textos, use 480p/720p/1080p.",
-                        "Exportar assim") { runExport(0, false, true) }
-                    else runExport(0, false, true)
-                } else runExport(heights[w], false, false)
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
+    // ---------------------------------------------------------------- editor de montagem
 
-    private fun runExport(height: Int, removeAudio: Boolean, fast: Boolean) {
+    private var montageOpened = false
+
+    private fun openMontage(clip: Int = -1) {
         if (seqMode) stopSeqPreview()
         player.pause()
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        val bar = LinearProgressIndicator(this).apply { max = 100; isIndeterminate = true }
-        val label = Dialogs.centerText(this, "Preparando…")
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val p = (24 * resources.displayMetrics.density).toInt()
-            setPadding(p, p, p, p / 2)
-            addView(label)
-            addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = p / 2 })
-            addView(TextView(context).apply {
-                text = "Deixe o app aberto até terminar."
-                setTextColor(0xFF9A9AA5.toInt()); textSize = 12f; gravity = Gravity.CENTER
-                setPadding(0, p / 2, 0, 0)
-            })
-        }
-        lateinit var dlg: AlertDialog
-        val ex = Exporter(this, project, uri)
-        exporter = ex
-        dlg = MaterialAlertDialogBuilder(this)
-            .setTitle(if (fast) "Exportação rápida" else "Exportando ${height}p")
-            .setView(box)
-            .setCancelable(false)
-            .setNegativeButton("Cancelar") { _, _ ->
-                ex.cancel()
-                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                toast("Exportação cancelada")
-            }
-            .show()
-
-        val t0 = SystemClock.elapsedRealtime()
-        ex.start(if (fast) 1080 else height, removeAudio, fast,
-            onProgress = { pct ->
-                bar.isIndeterminate = false
-                bar.setProgressCompat(pct, true)
-                val el = (SystemClock.elapsedRealtime() - t0) / 1000
-                val eta = if (pct in 3..99) " • falta ~${Fmt.time(el * (100 - pct) / pct * 1000, false)}" else ""
-                label.text = "Exportando… $pct%$eta"
-            },
-            onDone = { file ->
-                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                label.text = "Salvando na galeria…"
-                val name = "${project.name}_${System.currentTimeMillis() / 1000}".replace(Regex("[^A-Za-z0-9À-ú _-]"), "_")
-                io.execute {
-                    val result = try { Exporter.saveToGallery(this, file, name) } catch (e: Exception) { null }
-                    runOnUiThread {
-                        dlg.dismiss()
-                        if (result == null) {
-                            MaterialAlertDialogBuilder(this).setTitle("Erro ao salvar")
-                                .setMessage("O vídeo foi gerado, mas não consegui salvar na galeria.")
-                                .setPositiveButton("OK", null).show()
-                        } else showDone(result.first, result.second)
-                    }
-                }
-            },
-            onError = { msg ->
-                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                dlg.dismiss()
-                val b = MaterialAlertDialogBuilder(this)
-                    .setTitle("Erro na exportação")
-                    .setMessage("$msg\n\nDica: tente uma qualidade menor" + if (!removeAudio) " ou exporte sem áudio." else ".")
-                    .setNegativeButton("Fechar", null)
-                    .setNeutralButton(if (fast) "Tentar 720p" else "Tentar 480p") { _, _ ->
-                        runExport(if (fast) 720 else 480, removeAudio, false)
-                    }
-                if (!removeAudio) b.setPositiveButton("Sem áudio") { _, _ -> runExport(height, true, fast) }
-                b.show()
-            }
-        )
-    }
-
-    private fun showDone(contentUri: Uri?, path: String) {
-        val b = MaterialAlertDialogBuilder(this)
-            .setTitle("Vídeo pronto! 🎬")
-            .setMessage("Salvo em:\n$path")
-            .setNegativeButton("OK", null)
-        if (contentUri != null) {
-            b.setPositiveButton("Abrir") { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(contentUri, "video/mp4")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                } catch (_: Exception) { toast("Nenhum app para abrir vídeo") }
-            }
-            b.setNeutralButton("Compartilhar") { _, _ ->
-                startActivity(Intent.createChooser(
-                    Intent(Intent.ACTION_SEND).setType("video/mp4")
-                        .putExtra(Intent.EXTRA_STREAM, contentUri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Compartilhar vídeo"))
-            }
-        }
-        b.show()
+        save()
+        montageOpened = true
+        startActivity(Intent(this, MontageActivity::class.java)
+            .putExtra("id", project.id).putExtra("clip", clip))
     }
 
     // ---------------------------------------------------------------- abas / atualização
