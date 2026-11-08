@@ -55,6 +55,14 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     var userActive = false
         private set
 
+    /** Prévia travada: navegação presa entre Início e Fim do corte. */
+    var lockRange = false
+        set(v) { field = v; invalidate() }
+
+    private fun locked() = lockRange && inMs >= 0 && outMs > inMs
+    private fun lockClamp(ms: Long): Long =
+        if (locked()) ms.coerceIn(inMs, outMs) else ms.coerceIn(0, durationMs)
+
     private val d = resources.displayMetrics.density
     private var pxPerMs = 0f
 
@@ -84,6 +92,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     private val pScene = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pInMark = Paint().apply { color = 0xFF22D3EE.toInt(); strokeWidth = 3 * d }
     private val pDim = Paint().apply { color = 0x88000000.toInt() }
+    private val pDimLock = Paint().apply { color = 0xCC000000.toInt() }
     private val pOvBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF26262C.toInt() }
     private val pOvWin = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1.5f * d
@@ -157,6 +166,12 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     /** Zoom num nível fixo (ms mostrados na tela inteira). */
     fun zoomToVisible(ms: Long) { if (width > 0) animateZoomTo(width.toFloat() / ms) }
 
+    /** Estilo CapCut: dá zoom para o corte caber na tela, a partir do cursor no Início. */
+    fun focusSelection() {
+        if (width == 0 || inMs < 0 || outMs <= inMs) return
+        animateZoomTo(width * 0.46f / (outMs - inMs))
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         clampZoom()
@@ -215,8 +230,9 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
             val xi = x(inMs)
             if (outMs > inMs) {
                 val xo = x(outMs)
-                c.drawRect(0f, stripTop, xi, stripBottom, pDim)
-                c.drawRect(xo, stripTop, w, stripBottom, pDim)
+                val dim = if (lockRange) pDimLock else pDim
+                c.drawRect(0f, stripTop, xi, stripBottom, dim)
+                c.drawRect(xo, stripTop, w, stripBottom, dim)
                 c.drawRect(xi, stripTop, xo, stripBottom, pSelFill)
                 c.drawRect(xi, stripTop - 2 * d, xo, stripTop, pSelEdge)
                 c.drawRect(xi, stripBottom, xo, stripBottom + 2 * d, pSelEdge)
@@ -345,7 +361,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                     else -> 0f
                 }
                 if (mode == MODE_OVERVIEW) {
-                    timeMs = overviewMs(e.x)
+                    timeMs = lockClamp(overviewMs(e.x))
                     listener?.onScrub(timeMs)
                     invalidate()
                 }
@@ -355,7 +371,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
             MotionEvent.ACTION_MOVE -> {
                 vt?.addMovement(e)
                 if (mode == MODE_OVERVIEW) {
-                    timeMs = overviewMs(e.x)
+                    timeMs = lockClamp(overviewMs(e.x))
                     listener?.onScrub(timeMs)
                     invalidate()
                     return true
@@ -367,7 +383,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                 }
                 when (mode) {
                     MODE_SCROLL -> {
-                        timeMs = (anchorTime - (e.x - anchorX) / pxPerMs).toLong().coerceIn(0, durationMs)
+                        timeMs = lockClamp((anchorTime - (e.x - anchorX) / pxPerMs).toLong())
                         listener?.onScrub(timeMs)
                         invalidate()
                     }
@@ -392,7 +408,9 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
                 vt?.recycle(); vt = null
                 if (mode == MODE_SCROLL && !scaled && abs(vx) > 200 * d) {
                     val pos = (timeMs * pxPerMs).toInt()
-                    scroller.fling(pos, 0, (-vx).toInt(), 0, 0, (durationMs * pxPerMs).toInt(), 0, 0)
+                    val lo = if (locked()) (inMs * pxPerMs).toInt() else 0
+                    val hi = if (locked()) (outMs * pxPerMs).toInt() else (durationMs * pxPerMs).toInt()
+                    scroller.fling(pos, 0, (-vx).toInt(), 0, lo, hi, 0, 0)
                     flinging = true
                     postInvalidateOnAnimation()
                 } else finishUser()
@@ -408,7 +426,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     override fun computeScroll() {
         if (!flinging) return
         if (scroller.computeScrollOffset()) {
-            timeMs = (scroller.currX / pxPerMs).toLong().coerceIn(0, durationMs)
+            timeMs = lockClamp((scroller.currX / pxPerMs).toLong())
             listener?.onScrub(timeMs)
             postInvalidateOnAnimation()
         } else {
@@ -418,6 +436,7 @@ class TimelineView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? 
     }
 
     private fun finishUser() {
+        if (locked()) timeMs = lockClamp(timeMs)
         userActive = false
         mode = MODE_NONE
         listener?.onScrubEnd(timeMs)

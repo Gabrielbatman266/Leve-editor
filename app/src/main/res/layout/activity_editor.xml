@@ -59,6 +59,31 @@
             app:use_controller="false" />
 
         <TextView
+            android:id="@+id/tvCutBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="6dp"
+            android:background="#B3000000"
+            android:fontFamily="monospace"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="3dp"
+            android:textColor="#22D3EE"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/cutProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:max="1000"
+            android:visibility="gone"
+            app:indicatorColor="#22D3EE"
+            app:trackColor="#40FFFFFF"
+            app:trackThickness="4dp" />
+
+        <TextView
             android:id="@+id/tvOverlay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -232,6 +257,49 @@
                         android:layout_width="wrap_content"
                         android:layout_height="52dp"
                         android:text="Limpar" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/lockBar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="8dp"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnLock"
+                        style="@style/Btn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1.4"
+                        android:text="🔒 Travado no corte" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGoIn"
+                        style="@style/Btn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
+                        android:text="⏮ Início" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGoOut"
+                        style="@style/Btn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
+                        android:text="Fim ⏭" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnLoop"
+                        style="@style/Btn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:text="🔁" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton

@@ -84,6 +84,19 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
     private var fullPosBeforeSeq = 0L
     private var exporter: Exporter? = null
 
+    // prévia travada no corte (estilo CapCut)
+    private var lockOn = true
+    private var loopOn = false
+    private var lastTickPos = 0L
+    private lateinit var tvCutBadge: TextView
+    private lateinit var cutProgress: LinearProgressIndicator
+    private lateinit var lockBar: View
+    private lateinit var btnLock: MaterialButton
+    private lateinit var btnLoop: MaterialButton
+
+    private fun hasCut() = inMs >= 0 && outMs > inMs
+    private fun isLocked() = lockOn && hasCut() && !seqMode
+
     private val askStorage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { askExport() }
 
     // ---------------------------------------------------------------- ciclo de vida
@@ -123,6 +136,11 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         tvSeqEmpty = findViewById(R.id.tvSeqEmpty)
         btnPreviewSeq = findViewById(R.id.btnPreviewSeq)
         nav = findViewById(R.id.nav)
+        tvCutBadge = findViewById(R.id.tvCutBadge)
+        cutProgress = findViewById(R.id.cutProgress)
+        lockBar = findViewById(R.id.lockBar)
+        btnLock = findViewById(R.id.btnLock)
+        btnLoop = findViewById(R.id.btnLoop)
 
         tvTitle.text = project.name
         tvTitle.setOnClickListener {
@@ -232,6 +250,23 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
             if (stopAtMs >= 0 && pos >= stopAtMs) {
                 player.pause(); stopAtMs = -1
             }
+            if (isLocked()) {
+                // chegou no Fim do corte tocando: repete ou para no fim
+                if (player.isPlaying && lastTickPos < outMs && pos >= outMs) {
+                    if (loopOn) { player.setSeekParameters(SeekParameters.EXACT); player.seekTo(inMs) }
+                    else { player.pause(); player.seekTo(outMs) }
+                }
+                val shownPos = if (timeline.userActive) timeline.timeMs else pos
+                val rel = (shownPos - inMs).coerceIn(0, outMs - inMs)
+                tvCutBadge.text = "✂ PRÉVIA DO CORTE  ${Fmt.time(rel)} / ${Fmt.time(outMs - inMs)}"
+                tvCutBadge.visibility = View.VISIBLE
+                cutProgress.visibility = View.VISIBLE
+                cutProgress.progress = (rel * 1000 / (outMs - inMs)).toInt()
+            } else if (tvCutBadge.visibility == View.VISIBLE) {
+                tvCutBadge.visibility = View.GONE
+                cutProgress.visibility = View.GONE
+            }
+            lastTickPos = pos
             timeline.setTime(pos)
             val shown = if (timeline.userActive) timeline.timeMs else pos
             tvTime.text = "${Fmt.time(shown)} / ${Fmt.time(project.durationMs, false)}"
@@ -247,7 +282,8 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         if (seqMode) stopSeqPreview()
         player.pause()
         stopAtMs = -1
-        val t = ms.coerceIn(0, project.durationMs.coerceAtLeast(0))
+        var t = ms.coerceIn(0, project.durationMs.coerceAtLeast(0))
+        if (isLocked()) t = t.coerceIn(inMs, outMs)
         player.setSeekParameters(SeekParameters.EXACT)
         player.seekTo(t)
         timeline.jumpTo(t)
@@ -300,8 +336,17 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         btnPlay.setOnClickListener {
             if (seqMode) { if (player.isPlaying) player.pause() else player.play(); return@setOnClickListener }
             if (player.isPlaying) player.pause() else {
-                if (player.currentPosition >= project.durationMs - 100) player.seekTo(0)
                 stopAtMs = -1
+                val pos = player.currentPosition
+                if (isLocked()) {
+                    // toca só o corte: se está fora dele ou no fim, começa do Início
+                    if (pos < inMs || pos >= outMs - 60) {
+                        player.setSeekParameters(SeekParameters.EXACT)
+                        player.seekTo(inMs)
+                        timeline.jumpTo(inMs)
+                    }
+                } else if (pos >= project.durationMs - 100) player.seekTo(0)
+                lastTickPos = player.currentPosition
                 player.play()
             }
         }
@@ -325,11 +370,20 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
             outMs = pos
             player.pause()
             pushSel()
+            if (lockOn) focusCut()
         }
         findViewById<View>(R.id.btnClear).setOnClickListener {
             inMs = -1; outMs = -1; pushSel()
         }
         btnSave.setOnClickListener { saveScene() }
+        btnLock.setOnClickListener {
+            lockOn = !lockOn
+            pushSel()
+            if (lockOn) focusCut()
+        }
+        btnLoop.setOnClickListener { loopOn = !loopOn; updateSel() }
+        findViewById<View>(R.id.btnGoIn).setOnClickListener { if (hasCut()) seekExact(inMs) }
+        findViewById<View>(R.id.btnGoOut).setOnClickListener { if (hasCut()) seekExact(outMs) }
         btnCancelEdit.setOnClickListener { cancelEdit() }
         updateSel()
     }
@@ -346,6 +400,13 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         updateSel()
     }
 
+    /** Trava a prévia no corte: zoom no trecho e cursor no Início. */
+    private fun focusCut() {
+        if (!hasCut()) return
+        seekExact(inMs)
+        timeline.focusSelection()
+    }
+
     private fun updateSel() {
         tvSel.text = when {
             inMs < 0 -> "Toque em  [ Início  e depois em  Fim ]  para marcar a cena"
@@ -357,6 +418,12 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         btnSave.alpha = if (ok) 1f else 0.5f
         btnSave.text = if (editingSceneId != null) "✓  Atualizar cena" else "✂  Salvar cena"
         btnCancelEdit.visibility = if (editingSceneId != null) View.VISIBLE else View.GONE
+        timeline.lockRange = lockOn
+        lockBar.visibility = if (ok) View.VISIBLE else View.GONE
+        btnLock.text = if (lockOn) "🔒 Travado no corte" else "🔓 Livre"
+        btnLoop.text = if (loopOn) "🔁 Repetindo" else "🔁"
+        btnLoop.alpha = if (loopOn) 1f else 0.6f
+        if (ok && lockOn) tvSel.text = "${tvSel.text}\n▶ toca só o corte • arraste as bordas para ajustar"
     }
 
     private fun saveScene() {
@@ -393,8 +460,8 @@ class EditorActivity : AppCompatActivity(), TimelineView.Listener {
         inMs = s.startMs
         outMs = s.endMs
         nav.selectedItemId = R.id.tab_cut
-        seekExact(s.startMs)
         pushSel()
+        if (lockOn) focusCut() else seekExact(s.startMs)
         toast("Ajuste as bordas e toque em Atualizar cena")
     }
 
